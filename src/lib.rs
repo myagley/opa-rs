@@ -1,7 +1,23 @@
+use std::fmt;
 use std::str::Utf8Error;
 
 use thiserror::Error;
 use wasmtime::*;
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct ValueAddr(i32);
+
+impl fmt::Display for ValueAddr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ValueAddr({})", self.0)
+    }
+}
+
+impl From<i32> for ValueAddr {
+    fn from(addr: i32) -> Self {
+        Self(addr)
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -16,18 +32,18 @@ pub enum Error {
         Trap,
     ),
     #[error("Failed to parse json at addr \"{0}\".")]
-    JsonParse(i32),
+    JsonParse(ValueAddr),
     #[error("Failed to create CStr.")]
     CStr(#[source] Utf8Error),
 }
 
 pub struct Policy {
     memory: Memory,
-    data_addr: i32,
-    base_heap_ptr: i32,
-    base_heap_top: i32,
-    data_heap_ptr: i32,
-    data_heap_top: i32,
+    data_addr: ValueAddr,
+    base_heap_ptr: ValueAddr,
+    base_heap_top: ValueAddr,
+    data_heap_ptr: ValueAddr,
+    data_heap_top: ValueAddr,
 
     opa_malloc: Box<dyn Fn(i32) -> Result<i32, Trap>>,
     opa_json_parse: Box<dyn Fn(i32, i32) -> Result<i32, Trap>>,
@@ -150,9 +166,9 @@ impl Policy {
             );
         }
 
-        let data_addr = opa_json_parse(raw_addr, data.as_bytes().len() as i32)?;
-        let base_heap_ptr = opa_heap_ptr_get()?;
-        let base_heap_top = opa_heap_top_get()?;
+        let data_addr = opa_json_parse(raw_addr, data.as_bytes().len() as i32)?.into();
+        let base_heap_ptr = opa_heap_ptr_get()?.into();
+        let base_heap_top = opa_heap_top_get()?.into();
         let data_heap_ptr = base_heap_ptr;
         let data_heap_top = base_heap_top;
 
@@ -214,81 +230,81 @@ impl Policy {
         Ok(())
     }
 
-    fn eval_ctx_new(&mut self) -> Result<i32, Error> {
+    fn eval_ctx_new(&mut self) -> Result<ValueAddr, Error> {
         let addr = (self.opa_eval_ctx_new)()?;
-        Ok(addr)
+        Ok(addr.into())
     }
 
-    fn eval_ctx_set_input(&mut self, ctx_addr: i32, input_addr: i32) -> Result<(), Error> {
-        (self.opa_eval_ctx_set_input)(ctx_addr, input_addr)?;
+    fn eval_ctx_set_input(&mut self, ctx: ValueAddr, input: ValueAddr) -> Result<(), Error> {
+        (self.opa_eval_ctx_set_input)(ctx.0, input.0)?;
         Ok(())
     }
 
-    fn eval_ctx_set_data(&mut self, ctx_addr: i32, data_addr: i32) -> Result<(), Error> {
-        (self.opa_eval_ctx_set_data)(ctx_addr, data_addr)?;
+    fn eval_ctx_set_data(&mut self, ctx: ValueAddr, data: ValueAddr) -> Result<(), Error> {
+        (self.opa_eval_ctx_set_data)(ctx.0, data.0)?;
         Ok(())
     }
 
     fn builtins(&mut self) -> Result<String, Error> {
         let addr = (self.builtins)()?;
-        let s = self.dump_json(addr)?;
+        let s = self.dump_json(addr.into())?;
         Ok(s)
     }
 
-    fn eval(&mut self, ctx_addr: i32) -> Result<(), Error> {
-        (self.eval)(ctx_addr)?;
+    fn eval(&mut self, ctx: ValueAddr) -> Result<(), Error> {
+        (self.eval)(ctx.0)?;
         Ok(())
     }
 
-    fn eval_ctx_get_result(&mut self, ctx_addr: i32) -> Result<i32, Error> {
-        let addr = (self.opa_eval_ctx_get_result)(ctx_addr)?;
-        Ok(addr)
+    fn eval_ctx_get_result(&mut self, ctx: ValueAddr) -> Result<ValueAddr, Error> {
+        let addr = (self.opa_eval_ctx_get_result)(ctx.0)?;
+        Ok(addr.into())
     }
 
-    fn heap_ptr_get(&mut self) -> Result<i32, Error> {
+    fn heap_ptr_get(&mut self) -> Result<ValueAddr, Error> {
         let addr = (self.opa_heap_ptr_get)()?;
-        Ok(addr)
+        Ok(addr.into())
     }
 
-    fn heap_ptr_set(&mut self, addr: i32) -> Result<(), Error> {
-        (self.opa_heap_ptr_set)(addr)?;
+    fn heap_ptr_set(&mut self, addr: ValueAddr) -> Result<(), Error> {
+        (self.opa_heap_ptr_set)(addr.0)?;
         Ok(())
     }
 
-    fn heap_top_get(&mut self) -> Result<i32, Error> {
+    fn heap_top_get(&mut self) -> Result<ValueAddr, Error> {
         let addr = (self.opa_heap_top_get)()?;
-        Ok(addr)
+        Ok(addr.into())
     }
 
-    fn heap_top_set(&mut self, addr: i32) -> Result<(), Error> {
-        (self.opa_heap_top_set)(addr)?;
+    fn heap_top_set(&mut self, addr: ValueAddr) -> Result<(), Error> {
+        (self.opa_heap_top_set)(addr.0)?;
         Ok(())
     }
 
-    fn malloc(&mut self, len: usize) -> Result<i32, Error> {
+    fn malloc(&mut self, len: usize) -> Result<ValueAddr, Error> {
         let addr = (self.opa_malloc)(len as i32)?;
-        Ok(addr)
+        Ok(addr.into())
     }
 
-    fn json_parse(&mut self, addr: i32, len: usize) -> Result<i32, Error> {
-        let parsed_addr = (self.opa_json_parse)(addr, len as i32)?;
+    fn json_parse(&mut self, addr: ValueAddr, len: usize) -> Result<ValueAddr, Error> {
+        let parsed_addr = (self.opa_json_parse)(addr.0, len as i32)?;
         if parsed_addr == 0 {
             return Err(Error::JsonParse(addr));
         }
-        Ok(parsed_addr)
+        Ok(parsed_addr.into())
     }
 
-    fn json_dump(&mut self, addr: i32) -> Result<i32, Error> {
-        let raw_addr = (self.opa_json_dump)(addr)?;
-        Ok(raw_addr)
+    fn json_dump(&mut self, addr: ValueAddr) -> Result<ValueAddr, Error> {
+        let raw_addr = (self.opa_json_dump)(addr.0)?;
+        Ok(raw_addr.into())
     }
 
-    fn load_json(&mut self, value: &str) -> Result<i32, Error> {
+    fn load_json(&mut self, value: &str) -> Result<ValueAddr, Error> {
         let raw_addr = self.malloc(value.as_bytes().len())?;
         unsafe {
             std::ptr::copy_nonoverlapping(
                 value.as_ptr(),
-                self.memory.data_ptr().offset(raw_addr as isize),
+                self.memory.data_ptr().offset(raw_addr.0 as isize),
                 value.as_bytes().len(),
             );
         }
@@ -296,10 +312,10 @@ impl Policy {
         Ok(parsed_addr)
     }
 
-    fn dump_json(&mut self, addr: i32) -> Result<String, Error> {
+    fn dump_json(&mut self, addr: ValueAddr) -> Result<String, Error> {
         let raw_addr = self.json_dump(addr)?;
         let s = unsafe {
-            let p = self.memory.data_ptr().offset(raw_addr as isize);
+            let p = self.memory.data_ptr().offset(raw_addr.0 as isize);
             let cstr = std::ffi::CStr::from_ptr(p as *const i8);
             let s = cstr.to_str().map_err(Error::CStr)?;
             s.to_string()
