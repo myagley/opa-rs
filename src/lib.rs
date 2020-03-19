@@ -40,6 +40,7 @@ pub struct Policy {
     opa_eval_ctx_set_input: Box<dyn Fn(i32, i32) -> Result<(), Trap>>,
     opa_eval_ctx_set_data: Box<dyn Fn(i32, i32) -> Result<(), Trap>>,
     opa_eval_ctx_get_result: Box<dyn Fn(i32) -> Result<i32, Trap>>,
+    builtins: Box<dyn Fn() -> Result<i32, Trap>>,
     eval: Box<dyn Fn(i32) -> Result<i32, Trap>>,
 }
 
@@ -126,12 +127,30 @@ impl Policy {
             .ok_or_else(|| Error::MissingExport("opa_eval_ctx_get_result"))
             .and_then(|f| f.get1::<i32, i32>().map_err(|e| Error::Wasm(e)))?;
 
+        let builtins = instance
+            .get_export("builtins")
+            .and_then(|ext| ext.func())
+            .ok_or_else(|| Error::MissingExport("builtins"))
+            .and_then(|f| f.get0::<i32>().map_err(|e| Error::Wasm(e)))?;
+
         let eval = instance
             .get_export("eval")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("eval"))
             .and_then(|f| f.get1::<i32, i32>().map_err(|e| Error::Wasm(e)))?;
 
+        // Load the data
+        let data = "{}";
+        let raw_addr = opa_malloc(data.as_bytes().len() as i32)?;
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                data.as_ptr(),
+                memory.data_ptr().offset(raw_addr as isize),
+                data.as_bytes().len(),
+            );
+        }
+
+        let data_addr = opa_json_parse(raw_addr, data.as_bytes().len() as i32)?;
         let base_heap_ptr = opa_heap_ptr_get()?;
         let base_heap_top = opa_heap_top_get()?;
         let data_heap_ptr = base_heap_ptr;
@@ -139,7 +158,7 @@ impl Policy {
 
         let mut policy = Policy {
             memory,
-            data_addr: 0,
+            data_addr,
             base_heap_ptr,
             base_heap_top,
             data_heap_ptr,
@@ -156,11 +175,11 @@ impl Policy {
             opa_eval_ctx_set_input: Box::new(opa_eval_ctx_set_input),
             opa_eval_ctx_set_data: Box::new(opa_eval_ctx_set_data),
             opa_eval_ctx_get_result: Box::new(opa_eval_ctx_get_result),
+            builtins: Box::new(builtins),
             eval: Box::new(eval),
         };
-
-        let data_addr = policy.load_json("{}")?;
-        policy.data_addr = data_addr;
+        let builtins = policy.builtins()?;
+        println!("builtins: {}", builtins);
 
         Ok(policy)
     }
@@ -208,6 +227,12 @@ impl Policy {
     fn eval_ctx_set_data(&mut self, ctx_addr: i32, data_addr: i32) -> Result<(), Error> {
         (self.opa_eval_ctx_set_data)(ctx_addr, data_addr)?;
         Ok(())
+    }
+
+    fn builtins(&mut self) -> Result<String, Error> {
+        let addr = (self.builtins)()?;
+        let s = self.dump_json(addr)?;
+        Ok(s)
     }
 
     fn eval(&mut self, ctx_addr: i32) -> Result<(), Error> {
@@ -288,22 +313,27 @@ fn abort(_a: i32) {
 }
 
 fn builtin0(_a: i32, _b: i32) -> i32 {
+    println!("builtin0");
     0
 }
 
 fn builtin1(_a: i32, _b: i32, _c: i32) -> i32 {
+    println!("builtin1");
     0
 }
 
 fn builtin2(_a: i32, _b: i32, _c: i32, _d: i32) -> i32 {
+    println!("builtin2");
     0
 }
 
 fn builtin3(_a: i32, _b: i32, _c: i32, _d: i32, _e: i32) -> i32 {
+    println!("builtin3");
     0
 }
 
 fn builtin4(_a: i32, _b: i32, _c: i32, _d: i32, _e: i32, _f: i32) -> i32 {
+    println!("builtin4");
     0
 }
 
