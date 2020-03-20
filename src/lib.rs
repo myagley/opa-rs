@@ -6,6 +6,10 @@ use tempfile::TempDir;
 use thiserror::Error;
 use wasmtime::*;
 
+mod value;
+
+pub use value::{Number, Value};
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ValueAddr(i32);
 
