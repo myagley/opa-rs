@@ -8,5 +8,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1.0"
+clap = "2.33"
+tempfile = "3"
 thiserror = "1.0"
 wasmtime = "0.12.0"

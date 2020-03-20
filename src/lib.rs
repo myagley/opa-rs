@@ -1,6 +1,8 @@
-use std::fmt;
+use std::path::Path;
 use std::str::Utf8Error;
+use std::{fmt, io, process};
 
+use tempfile::TempDir;
 use thiserror::Error;
 use wasmtime::*;
 
@@ -35,6 +37,16 @@ pub enum Error {
     JsonParse(ValueAddr),
     #[error("Failed to create CStr.")]
     CStr(#[source] Utf8Error),
+    #[error("Failed to open a directory.")]
+    DirOpen(#[source] io::Error),
+    #[error("Failed to open a file.")]
+    FileOpen(#[source] io::Error),
+    #[error("Failed to read file.")]
+    FileRead(#[source] io::Error),
+    #[error("Failed to call opa compiler.")]
+    OpaCommand(#[source] io::Error),
+    #[error("Failed to compile rego file: {0}")]
+    OpaCompiler(String),
 }
 
 pub struct Policy {
@@ -61,6 +73,28 @@ pub struct Policy {
 }
 
 impl Policy {
+    pub fn from_rego<P: AsRef<Path>>(path: P, query: &str) -> Result<Self, Error> {
+        let dir = TempDir::new().map_err(Error::DirOpen)?;
+        let wasm = dir.path().join("policy.wasm");
+        let output = process::Command::new("opa")
+            .arg("build")
+            .args(&["-d".as_ref(), path.as_ref().as_os_str()])
+            .args(&["-o".as_ref(), wasm.as_os_str()])
+            .arg(query)
+            .output()
+            .map_err(Error::OpaCommand)?;
+
+        if !output.status.success() {
+            return Err(Error::OpaCompiler(
+                String::from_utf8_lossy(&output.stdout).to_string(),
+            ));
+        }
+
+        let store = Store::default();
+        let module = Module::from_file(&store, &wasm).map_err(Error::Wasm)?;
+        Self::from_wasm(&module)
+    }
+
     pub fn from_wasm(module: &Module) -> Result<Self, Error> {
         let memorytype = MemoryType::new(Limits::new(5, None));
         let memory = Memory::new(module.store(), memorytype);
