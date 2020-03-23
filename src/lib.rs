@@ -1,13 +1,13 @@
 use std::path::Path;
-use std::str::Utf8Error;
-use std::{fmt, io, process};
+use std::{fmt, process};
 
 use tempfile::TempDir;
-use thiserror::Error;
 use wasmtime::*;
 
+mod error;
 mod value;
 
+pub use error::Error;
 pub use value::{Number, Value};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -23,34 +23,6 @@ impl From<i32> for ValueAddr {
     fn from(addr: i32) -> Self {
         Self(addr)
     }
-}
-
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error("An occurred from wasmtime")]
-    Wasm(#[source] anyhow::Error),
-    #[error("Expected exported function {0}")]
-    MissingExport(&'static str),
-    #[error("A wasm function call trapped.")]
-    Trap(
-        #[source]
-        #[from]
-        Trap,
-    ),
-    #[error("Failed to parse json at addr \"{0}\".")]
-    JsonParse(ValueAddr),
-    #[error("Failed to create CStr.")]
-    CStr(#[source] Utf8Error),
-    #[error("Failed to open a directory.")]
-    DirOpen(#[source] io::Error),
-    #[error("Failed to open a file.")]
-    FileOpen(#[source] io::Error),
-    #[error("Failed to read file.")]
-    FileRead(#[source] io::Error),
-    #[error("Failed to call opa compiler.")]
-    OpaCommand(#[source] io::Error),
-    #[error("Failed to compile rego file: {0}")]
-    OpaCompiler(String),
 }
 
 pub struct Policy {

@@ -1,6 +1,10 @@
 use std::fmt;
 
 use ordered_float::OrderedFloat;
+use serde::de::{self, Visitor};
+use serde::{forward_to_deserialize_any, Deserialize, Deserializer, Serialize, Serializer};
+
+use crate::Error;
 
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Number {
@@ -128,3 +132,143 @@ macro_rules! impl_from_float {
 }
 
 impl_from_float!(f32, f64);
+
+impl Serialize for Number {
+    #[inline]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self.n {
+            N::Int(i) => serializer.serialize_i64(i),
+            N::Float(f) => f.serialize(serializer),
+            N::Ref(ref s) => serializer.serialize_str(s),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Number {
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<Number, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct NumberVisitor;
+
+        impl<'de> Visitor<'de> for NumberVisitor {
+            type Value = Number;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a Rego number")
+            }
+
+            #[inline]
+            fn visit_i64<E>(self, value: i64) -> Result<Number, E> {
+                Ok(value.into())
+            }
+
+            #[inline]
+            fn visit_f64<E>(self, value: f64) -> Result<Number, E>
+            where
+                E: de::Error,
+            {
+                Number::from_f64(value).ok_or_else(|| de::Error::custom("not a Rego number"))
+            }
+
+            #[inline]
+            fn visit_string<E>(self, value: String) -> Result<Number, E> {
+                let n = N::Ref(value);
+                Ok(Number { n })
+            }
+
+            #[inline]
+            fn visit_str<E>(self, value: &str) -> Result<Number, E> {
+                let n = N::Ref(value.to_owned());
+                Ok(Number { n })
+            }
+        }
+
+        deserializer.deserialize_any(NumberVisitor)
+    }
+}
+
+macro_rules! deserialize_any {
+    (@expand [$($num_string:tt)*]) => {
+        #[inline]
+        fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Error>
+        where
+            V: Visitor<'de>,
+        {
+            match self.n {
+                N::Int(i) => visitor.visit_i64(i),
+                N::Float(f) => visitor.visit_f64(f.into_inner()),
+                N::Ref(ref s) => visitor.visit_str(s),
+            }
+        }
+    };
+
+    (owned) => {
+        deserialize_any!(@expand [n]);
+    };
+
+    (ref) => {
+        deserialize_any!(@expand [n.clone()]);
+    };
+}
+
+macro_rules! deserialize_number {
+    ($deserialize:ident => $visit:ident) => {
+        fn $deserialize<V>(self, visitor: V) -> Result<V::Value, Error>
+        where
+            V: Visitor<'de>,
+        {
+            self.deserialize_any(visitor)
+        }
+    }
+}
+
+impl<'de> Deserializer<'de> for Number {
+    type Error = Error;
+
+    deserialize_any!(owned);
+
+    deserialize_number!(deserialize_i8 => visit_i8);
+    deserialize_number!(deserialize_i16 => visit_i16);
+    deserialize_number!(deserialize_i32 => visit_i32);
+    deserialize_number!(deserialize_i64 => visit_i64);
+    deserialize_number!(deserialize_u8 => visit_u8);
+    deserialize_number!(deserialize_u16 => visit_u16);
+    deserialize_number!(deserialize_u32 => visit_u32);
+    deserialize_number!(deserialize_u64 => visit_u64);
+    deserialize_number!(deserialize_f32 => visit_f32);
+    deserialize_number!(deserialize_f64 => visit_f64);
+
+    forward_to_deserialize_any! {
+        bool char str string bytes byte_buf option unit unit_struct
+        newtype_struct seq tuple tuple_struct map struct enum identifier
+        ignored_any
+    }
+}
+
+impl<'de, 'a> Deserializer<'de> for &'a Number {
+    type Error = Error;
+
+    deserialize_any!(ref);
+
+    deserialize_number!(deserialize_i8 => visit_i8);
+    deserialize_number!(deserialize_i16 => visit_i16);
+    deserialize_number!(deserialize_i32 => visit_i32);
+    deserialize_number!(deserialize_i64 => visit_i64);
+    deserialize_number!(deserialize_u8 => visit_u8);
+    deserialize_number!(deserialize_u16 => visit_u16);
+    deserialize_number!(deserialize_u32 => visit_u32);
+    deserialize_number!(deserialize_u64 => visit_u64);
+    deserialize_number!(deserialize_f32 => visit_f32);
+    deserialize_number!(deserialize_f64 => visit_f64);
+
+    forward_to_deserialize_any! {
+        bool char str string bytes byte_buf option unit unit_struct
+        newtype_struct seq tuple tuple_struct map struct enum identifier
+        ignored_any
+    }
+}
