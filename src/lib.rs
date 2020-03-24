@@ -27,9 +27,9 @@ impl From<i32> for ValueAddr {
     }
 }
 
-#[derive(Clone)]
 pub struct Policy {
     memory: Memory,
+    instance: Instance,
     data_addr: ValueAddr,
     base_heap_ptr: ValueAddr,
     base_heap_top: ValueAddr,
@@ -52,6 +52,12 @@ struct Inner {
     opa_eval_ctx_get_result: Box<dyn Fn(i32) -> Result<i32, Trap>>,
     builtins: Box<dyn Fn() -> Result<i32, Trap>>,
     eval: Box<dyn Fn(i32) -> Result<i32, Trap>>,
+}
+
+impl fmt::Debug for Inner {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Inner")
+    }
 }
 
 impl Inner {
@@ -145,28 +151,29 @@ impl Policy {
     pub fn from_wasm(module: &Module) -> Result<Self, Error> {
         let memorytype = MemoryType::new(Limits::new(5, None));
         let memory = Memory::new(module.store(), memorytype);
-        let mut policy = Policy {
-            memory: memory.clone(),
-            data_addr: ValueAddr(0),
-            base_heap_ptr: ValueAddr(0),
-            base_heap_top: ValueAddr(0),
-            data_heap_ptr: ValueAddr(0),
-            data_heap_top: ValueAddr(0),
-            inner: Arc::new(RefCell::new(None)),
-        };
+        let inner = Arc::new(RefCell::new(None));
 
-        let pol1 = policy.clone();
-        let pol2 = policy.clone();
+        let inner1 = inner.clone();
+        let mem1 = memory.clone();
+        let inner2 = inner.clone();
+        let mem2 = memory.clone();
 
         let imports = [
             Extern::Memory(memory.clone()),
             Extern::Func(Func::wrap1(module.store(), abort)),
             Extern::Func(Func::wrap2(module.store(), builtin0)),
             Extern::Func(Func::wrap3(module.store(), move |id, ctx, a| {
-                builtin1(&pol1, id, ValueAddr(ctx), ValueAddr(a))
+                builtin1(&inner1, &mem1, id, ValueAddr(ctx), ValueAddr(a))
             })),
             Extern::Func(Func::wrap4(module.store(), move |id, ctx, a, b| {
-                builtin2(&pol2, id, ValueAddr(ctx), ValueAddr(a), ValueAddr(b))
+                builtin2(
+                    &inner2,
+                    &mem2,
+                    id,
+                    ValueAddr(ctx),
+                    ValueAddr(a),
+                    ValueAddr(b),
+                )
             })),
             Extern::Func(Func::wrap5(module.store(), builtin3)),
             Extern::Func(Func::wrap6(module.store(), builtin4)),
@@ -263,11 +270,22 @@ impl Policy {
             );
         }
 
-        policy.data_addr = opa_json_parse(raw_addr, data.as_bytes().len() as i32)?.into();
-        policy.base_heap_ptr = opa_heap_ptr_get()?.into();
-        policy.base_heap_top = opa_heap_top_get()?.into();
-        policy.data_heap_ptr = policy.base_heap_ptr;
-        policy.data_heap_top = policy.base_heap_top;
+        let data_addr = opa_json_parse(raw_addr, data.as_bytes().len() as i32)?.into();
+        let base_heap_ptr = opa_heap_ptr_get()?.into();
+        let base_heap_top = opa_heap_top_get()?.into();
+        let data_heap_ptr = base_heap_ptr;
+        let data_heap_top = base_heap_top;
+
+        let mut policy = Policy {
+            memory: memory.clone(),
+            instance,
+            data_addr,
+            base_heap_ptr,
+            base_heap_top,
+            data_heap_ptr,
+            data_heap_top,
+            inner: inner.clone(),
+        };
 
         let inner = Inner {
             opa_malloc: Box::new(opa_malloc),
@@ -317,8 +335,8 @@ impl Policy {
     }
 
     pub fn set_data(&mut self, data: &str) -> Result<(), Error> {
-        let mut maybe_inner = self.inner.borrow_mut();
-        let inner = maybe_inner.as_mut().expect("inner not initialized");
+        let maybe_inner = self.inner.borrow();
+        let inner = maybe_inner.as_ref().expect("inner not initialized");
         inner.heap_ptr_set(self.base_heap_ptr)?;
         inner.heap_top_set(self.base_heap_top)?;
         self.data_addr = self.load_json(data)?;
@@ -328,47 +346,56 @@ impl Policy {
     }
 
     pub fn builtins(&mut self) -> Result<String, Error> {
-        // let  maybe_inner = self.inner.borrow();
-        // let inner = maybe_inner.as_ref().expect("inner not initialized");
-        // inner.builtins()
-        //     fn builtins(&self) -> Result<String, Error> {
-        //         let addr = (self.builtins)()?;
-        //         let s = self.dump_json(addr.into())?;
-        //         Ok(s)
-        //     }
-        Ok("".to_string())
+        let maybe_inner = self.inner.borrow();
+        let inner = maybe_inner.as_ref().expect("inner not initialized");
+        let addr = (inner.builtins)()?;
+        let s = dump_json(&self.inner, &self.memory, ValueAddr(addr))?;
+        Ok(s)
     }
 
     fn load_json(&self, value: &str) -> Result<ValueAddr, Error> {
-        let maybe_inner = self.inner.borrow();
-        let inner = maybe_inner.as_ref().expect("inner not initialized");
-
-        let raw_addr = inner.malloc(value.as_bytes().len())?;
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                value.as_ptr(),
-                self.memory.data_ptr().offset(raw_addr.0 as isize),
-                value.as_bytes().len(),
-            );
-        }
-        let parsed_addr = inner.json_parse(raw_addr, value.as_bytes().len())?;
-        Ok(parsed_addr)
+        load_json(&self.inner, &self.memory, value)
     }
 
     fn dump_json(&self, addr: ValueAddr) -> Result<String, Error> {
-        let maybe_inner = self.inner.borrow();
-        let inner = maybe_inner.as_ref().expect("inner not initialized");
-
-        let raw_addr = inner.json_dump(addr)?;
-        println!("raw_addr: {}", raw_addr);
-        let s = unsafe {
-            let p = self.memory.data_ptr().offset(raw_addr.0 as isize);
-            let cstr = std::ffi::CStr::from_ptr(p as *const i8);
-            let s = cstr.to_str().map_err(Error::CStr)?;
-            s.to_string()
-        };
-        Ok(s)
+        dump_json(&self.inner, &self.memory, addr)
     }
+}
+
+fn dump_json(
+    inner: &Arc<RefCell<Option<Inner>>>,
+    memory: &Memory,
+    addr: ValueAddr,
+) -> Result<String, Error> {
+    let maybe_inner = inner.borrow();
+    let inner = maybe_inner.as_ref().expect("inner not initialized");
+    let raw_addr = inner.json_dump(addr)?;
+    let s = unsafe {
+        let p = memory.data_ptr().offset(raw_addr.0 as isize);
+        let cstr = std::ffi::CStr::from_ptr(p as *const i8);
+        let s = cstr.to_str().map_err(Error::CStr)?;
+        s.to_string()
+    };
+    Ok(s)
+}
+
+fn load_json(
+    inner: &Arc<RefCell<Option<Inner>>>,
+    memory: &Memory,
+    value: &str,
+) -> Result<ValueAddr, Error> {
+    let maybe_inner = inner.borrow();
+    let inner = maybe_inner.as_ref().expect("inner not initialized");
+    let raw_addr = inner.malloc(value.as_bytes().len())?;
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            value.as_ptr(),
+            memory.data_ptr().offset(raw_addr.0 as isize),
+            value.as_bytes().len(),
+        );
+    }
+    let parsed_addr = inner.json_parse(raw_addr, value.as_bytes().len())?;
+    Ok(parsed_addr)
 }
 
 fn abort(_a: i32) {
@@ -380,29 +407,46 @@ fn builtin0(_a: i32, _b: i32) -> i32 {
     0
 }
 
-fn builtin1(policy: &Policy, _id: i32, _ctx_addr: ValueAddr, value: ValueAddr) -> i32 {
-    println!("value: {}", value);
-    match policy.dump_json(value) {
+fn builtin1(
+    inner: &Arc<RefCell<Option<Inner>>>,
+    memory: &Memory,
+    _id: i32,
+    _ctx_addr: ValueAddr,
+    value: ValueAddr,
+) -> i32 {
+    match dump_json(inner, memory, value) {
         Ok(s) => println!("s: {}", s),
         Err(e) => println!("error: {}", e),
     }
     0
 }
 
-fn builtin2(policy: &Policy, _id: i32, _ctx_addr: ValueAddr, a: ValueAddr, b: ValueAddr) -> i32 {
-    println!("a: {}, b: {}", a, b);
-    println!("memsize: {}", policy.memory.size());
+fn builtin2(
+    inner: &Arc<RefCell<Option<Inner>>>,
+    memory: &Memory,
+    _id: i32,
+    _ctx_addr: ValueAddr,
+    a: ValueAddr,
+    b: ValueAddr,
+) -> i32 {
+    let val1 = match dump_json(inner, memory, a) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("error: {}", e);
+            return 0;
+        }
+    };
 
-    unsafe {
-        let p = a.0 as usize;
-        println!("memsize: {}", policy.memory.size());
-        println!("mem: {:?}", &policy.memory.data_unchecked()[p..p + 4]);
-    }
+    let val2 = match dump_json(inner, memory, b) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("error: {}", e);
+            return 0;
+        }
+    };
 
-    match policy.dump_json(a) {
-        Ok(s) => println!("s: {}", s),
-        Err(e) => println!("error: {}", e),
-    }
+    println!("a: {}, b: {}", val1, val2);
+
     0
 }
 
