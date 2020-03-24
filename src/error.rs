@@ -34,19 +34,23 @@ pub enum Error {
     #[error("Failed to compile rego file: {0}")]
     OpaCompiler(String),
     #[error("Failed to deserialize: {0}")]
-    Deserialize(String),
+    DeserializeValue(String),
     #[error("Failed to serialize: {0}")]
-    Serialize(String),
+    SerializeValue(String),
+    #[error("Failed to deserialize JSON")]
+    DeserializeJson(#[source] serde_json::Error),
+    #[error("Failed to serialize JSON")]
+    SerializeJson(#[source] serde_json::Error),
 }
 
 impl de::Error for Error {
     fn custom<T: fmt::Display>(msg: T) -> Error {
-        Error::Deserialize(msg.to_string())
+        Error::DeserializeValue(msg.to_string())
     }
 }
 
 impl ser::Error for Error {
     fn custom<T: fmt::Display>(msg: T) -> Error {
-        Error::Serialize(msg.to_string())
+        Error::SerializeValue(msg.to_string())
     }
 }
