@@ -30,6 +30,11 @@ impl<'de> Deserialize<'de> for Value {
             }
 
             #[inline]
+            fn visit_u64<E>(self, value: u64) -> Result<Value, E> {
+                Ok(Value::Number(value.into()))
+            }
+
+            #[inline]
             fn visit_f64<E>(self, value: f64) -> Result<Value, E> {
                 Ok(Value::Number(value.into()))
             }

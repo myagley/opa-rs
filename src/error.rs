@@ -5,7 +5,7 @@ use serde::{de, ser};
 use thiserror::Error;
 use wasmtime::Trap;
 
-use crate::ValueAddr;
+use crate::{Value, ValueAddr};
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -41,6 +41,8 @@ pub enum Error {
     DeserializeJson(#[source] serde_json::Error),
     #[error("Failed to serialize JSON")]
     SerializeJson(#[source] serde_json::Error),
+    #[error("Invalid type in builtin function: expected {0}, got {1:?}")]
+    InvalidType(&'static str, Value),
 }
 
 impl de::Error for Error {

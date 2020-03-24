@@ -27,6 +27,7 @@ impl From<i32> for ValueAddr {
     }
 }
 
+#[allow(dead_code)]
 pub struct Policy {
     memory: Memory,
     instance: Instance,
@@ -402,6 +403,18 @@ fn abort(_a: i32) {
     println!("abort");
 }
 
+macro_rules! btry {
+    ($expr:expr) => {
+        match $expr {
+            ::std::result::Result::Ok(val) => val,
+            ::std::result::Result::Err(err) => {
+                println!("builtin error: {}", err);
+                return 0;
+            }
+        }
+    };
+}
+
 fn builtin0(_a: i32, _b: i32) -> i32 {
     println!("builtin0");
     0
@@ -414,11 +427,19 @@ fn builtin1(
     _ctx_addr: ValueAddr,
     value: ValueAddr,
 ) -> i32 {
-    match dump_json(inner, memory, value) {
-        Ok(s) => println!("s: {}", s),
-        Err(e) => println!("error: {}", e),
-    }
-    0
+    let val = btry!(dump_json(inner, memory, value)
+        .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
+
+    let len = match val {
+        Value::Array(ref v) => v.len(),
+        Value::Object(ref v) => v.len(),
+        Value::Set(ref v) => v.len(),
+        _ => return 0,
+    };
+
+    let serialized = btry!(serde_json::to_string(&Value::Number(len.into())));
+    let addr = btry!(load_json(inner, memory, &serialized));
+    addr.0
 }
 
 fn builtin2(
@@ -429,25 +450,21 @@ fn builtin2(
     a: ValueAddr,
     b: ValueAddr,
 ) -> i32 {
-    let val1 = match dump_json(inner, memory, a) {
-        Ok(s) => s,
-        Err(e) => {
-            println!("error: {}", e);
-            return 0;
-        }
-    };
+    let val1: Value = btry!(dump_json(inner, memory, a)
+        .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
+    let val2: Value = btry!(dump_json(inner, memory, b)
+        .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
 
-    let val2 = match dump_json(inner, memory, b) {
-        Ok(s) => s,
-        Err(e) => {
-            println!("error: {}", e);
-            return 0;
-        }
-    };
-
-    println!("a: {}, b: {}", val1, val2);
-
-    0
+    let num1 = btry!(val1
+        .as_i64()
+        .ok_or_else(|| Error::InvalidType("Number", val1)));
+    let num2 = btry!(val2
+        .as_i64()
+        .ok_or_else(|| Error::InvalidType("Number", val2)));
+    let sum = num1 + num2;
+    let serialized = btry!(serde_json::to_string(&Value::Number(sum.into())));
+    let addr = btry!(load_json(inner, memory, &serialized));
+    addr.0
 }
 
 fn builtin3(_a: i32, _b: i32, _c: i32, _d: i32, _e: i32) -> i32 {
