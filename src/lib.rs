@@ -67,15 +67,23 @@ impl Policy {
         let memory = Memory::new(module.store(), memorytype);
         let functions = Functions::default();
 
+        let func0 = functions.clone();
         let func1 = functions.clone();
         let func2 = functions.clone();
+        let func3 = functions.clone();
+        let func4 = functions.clone();
+        let mem0 = memory.clone();
         let mem1 = memory.clone();
         let mem2 = memory.clone();
+        let mem3 = memory.clone();
+        let mem4 = memory.clone();
 
         let imports = [
             Extern::Memory(memory.clone()),
             Extern::Func(Func::wrap1(module.store(), abort)),
-            Extern::Func(Func::wrap2(module.store(), builtin0)),
+            Extern::Func(Func::wrap2(module.store(), move |id, ctx| {
+                builtin0(&func0, &mem0, ValueAddr(id), ValueAddr(ctx))
+            })),
             Extern::Func(Func::wrap3(module.store(), move |id, ctx, a| {
                 builtin1(&func1, &mem1, id, ValueAddr(ctx), ValueAddr(a))
             })),
@@ -89,8 +97,12 @@ impl Policy {
                     ValueAddr(b),
                 )
             })),
-            Extern::Func(Func::wrap5(module.store(), builtin3)),
-            Extern::Func(Func::wrap6(module.store(), builtin4)),
+            Extern::Func(Func::wrap5(module.store(), move |id, ctx, a, b, c| {
+                builtin3(&func3, &mem3, id, ValueAddr(ctx), ValueAddr(a), ValueAddr(b), ValueAddr(c))
+            })),
+            Extern::Func(Func::wrap6(module.store(), move |id, ctx, a, b, c, d | {
+                builtin4(&func4, &mem4, id, ValueAddr(ctx), ValueAddr(a), ValueAddr(b), ValueAddr(c), ValueAddr(d))
+            })),
         ];
 
         let instance = Instance::new(module, &imports).map_err(|e| Error::Wasm(e))?;
@@ -215,7 +227,7 @@ macro_rules! btry {
     };
 }
 
-fn builtin0(_a: i32, _b: i32) -> i32 {
+fn builtin0(_functions: &Functions, _memory: &Memory, _id: ValueAddr, _ctx_addr: ValueAddr) -> i32 {
     println!("builtin0");
     0
 }
@@ -267,12 +279,29 @@ fn builtin2(
     addr.0
 }
 
-fn builtin3(_a: i32, _b: i32, _c: i32, _d: i32, _e: i32) -> i32 {
+fn builtin3(
+    _functions: &Functions,
+    _memory: &Memory,
+    _id: i32,
+    _ctx_addr: ValueAddr,
+    _a: ValueAddr,
+    _b: ValueAddr,
+    _c: ValueAddr,
+) -> i32 {
     println!("builtin3");
     0
 }
 
-fn builtin4(_a: i32, _b: i32, _c: i32, _d: i32, _e: i32, _f: i32) -> i32 {
+fn builtin4(
+    _functions: &Functions,
+    _memory: &Memory,
+    _id: i32,
+    _ctx_addr: ValueAddr,
+    _a: ValueAddr,
+    _b: ValueAddr,
+    _c: ValueAddr,
+    _d: ValueAddr,
+) -> i32 {
     println!("builtin4");
     0
 }
