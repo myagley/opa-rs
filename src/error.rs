@@ -9,6 +9,8 @@ use crate::{Value, ValueAddr};
 
 #[derive(Error, Debug)]
 pub enum Error {
+    #[error("Policy is not initialized properly. This is a bug.")]
+    Initialization,
     #[error("An occurred from wasmtime")]
     Wasm(#[source] anyhow::Error),
     #[error("Expected exported function {0}")]
