@@ -37,6 +37,57 @@ impl fmt::Debug for Value {
     }
 }
 
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Value::Null => write!(f, "null"),
+            Value::Bool(ref v) => fmt::Display::fmt(v, f),
+            Value::Number(ref v) => fmt::Display::fmt(v, f),
+            Value::String(ref v) => write!(f, "\"{}\"", v.escape_default()),
+            Value::Array(ref v) => {
+                write!(f, "[")?;
+                let mut iter = v.iter();
+                if let Some(first) = iter.next() {
+                    fmt::Display::fmt(first, f)?;
+                }
+                while let Some(elem) = iter.next() {
+                    write!(f, ",")?;
+                    fmt::Display::fmt(elem, f)?;
+                }
+                write!(f, "]")
+            }
+            Value::Object(ref v) => {
+                write!(f, "{{")?;
+                let mut iter = v.iter();
+                if let Some((k, v)) = iter.next() {
+                    fmt::Display::fmt(k, f)?;
+                    write!(f, ":")?;
+                    fmt::Display::fmt(v, f)?;
+                }
+                while let Some((k, v)) = iter.next() {
+                    write!(f, ",")?;
+                    fmt::Display::fmt(k, f)?;
+                    write!(f, ":")?;
+                    fmt::Display::fmt(v, f)?;
+                }
+                write!(f, "}}")
+            }
+            Value::Set(ref v) => {
+                write!(f, "{{")?;
+                let mut iter = v.iter();
+                if let Some(first) = iter.next() {
+                    fmt::Display::fmt(first, f)?;
+                }
+                while let Some(elem) = iter.next() {
+                    write!(f, ",")?;
+                    fmt::Display::fmt(elem, f)?;
+                }
+                write!(f, "}}")
+            }
+        }
+    }
+}
+
 impl Default for Value {
     fn default() -> Value {
         Value::Null

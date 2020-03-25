@@ -42,6 +42,6 @@ fn main() -> Result<(), anyhow::Error> {
 
     let mut policy = Policy::from_rego(&policy_path, query)?;
     let result = policy.evaluate(&input)?;
-    println!("result: {:?}", result);
+    println!("result: {}", result);
     Ok(())
 }
