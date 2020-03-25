@@ -7,6 +7,8 @@ use wasmtime::Memory;
 
 use crate::{dump_json, load_json, Error, Functions, Value, ValueAddr};
 
+mod numbers;
+
 macro_rules! btry {
     ($expr:expr) => {
         match $expr {
@@ -30,11 +32,17 @@ lazy_static! {
     static ref BUILTIN1: HashMap<&'static str, Arity1> = {
         let mut b: HashMap<&'static str, Arity1> = HashMap::new();
         b.insert("count", count);
+        b.insert("abs", numbers::abs);
+        b.insert("round", numbers::round);
         b
     };
     static ref BUILTIN2: HashMap<&'static str, Arity2> = {
         let mut b: HashMap<&'static str, Arity2> = HashMap::new();
-        b.insert("plus", plus);
+        b.insert("plus", numbers::plus);
+        b.insert("minus", numbers::minus);
+        b.insert("mul", numbers::mul);
+        b.insert("div", numbers::div);
+        b.insert("rem", numbers::rem);
         b
     };
     static ref BUILTIN3: HashMap<&'static str, Arity3> = { HashMap::new() };
@@ -265,11 +273,4 @@ fn count(a: Value) -> Result<Value, Error> {
         _ => Value::Null,
     };
     Ok(v)
-}
-
-fn plus(a: Value, b: Value) -> Result<Value, Error> {
-    let num1 = a.as_i64().ok_or_else(|| Error::InvalidType("Number", a))?;
-    let num2 = b.as_i64().ok_or_else(|| Error::InvalidType("Number", b))?;
-    let sum = num1 + num2;
-    Ok(Value::Number(sum.into()))
 }

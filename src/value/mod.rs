@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 mod de;
+mod from;
 mod index;
 mod number;
 mod ser;
