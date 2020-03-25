@@ -73,6 +73,19 @@ impl Policy {
     pub fn from_wasm(module: &Module) -> Result<Self, Error> {
         let memorytype = MemoryType::new(Limits::new(5, None));
         let memory = Memory::new(module.store(), memorytype);
+
+        // Builtins are tricky to handle.
+        // We need to setup the functions as imports before creating
+        // the instance. However, these functions require an instance to be called.
+        // This is a circular dependency, which needless to say poses problems for
+        // rust.
+        //
+        // To workaround this, we create an empty Builtins struct that we pass to the
+        // imports so they can get a reference. Then, the instance is created and the
+        // Builtins struct is updated with the instance. This is safe because none of
+        // the builtins are called before the instance is created. It makes the Builtins
+        // struct annoyingly complex because we need to use an Arc for shared references
+        // as well as mutate the contents, requiring a RefCell.
         let builtins = Builtins::default();
 
         let b0 = builtins.clone();
@@ -142,6 +155,8 @@ impl Policy {
         Ok(policy)
     }
 
+    // This takes a &mut self because calling it potentially mutates the
+    // memory. We could make this take &self, if we add a mutex.
     pub fn evaluate(&mut self, input: &str) -> Result<Value, Error> {
         // Reset the heap pointers
         self.functions.heap_ptr_set(self.data_heap_ptr)?;
