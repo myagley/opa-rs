@@ -4,10 +4,12 @@ use std::{fmt, process};
 use tempfile::TempDir;
 use wasmtime::*;
 
+mod builtins;
 mod error;
 mod functions;
 mod value;
 
+use builtins::Builtins;
 use functions::Functions;
 
 pub use error::Error;
@@ -25,6 +27,12 @@ impl fmt::Display for ValueAddr {
 impl From<i32> for ValueAddr {
     fn from(addr: i32) -> Self {
         Self(addr)
+    }
+}
+
+impl From<ValueAddr> for i32 {
+    fn from(v: ValueAddr) -> Self {
+        v.0
     }
 }
 
@@ -65,48 +73,44 @@ impl Policy {
     pub fn from_wasm(module: &Module) -> Result<Self, Error> {
         let memorytype = MemoryType::new(Limits::new(5, None));
         let memory = Memory::new(module.store(), memorytype);
-        let functions = Functions::default();
+        let builtins = Builtins::default();
 
-        let func0 = functions.clone();
-        let func1 = functions.clone();
-        let func2 = functions.clone();
-        let func3 = functions.clone();
-        let func4 = functions.clone();
-        let mem0 = memory.clone();
-        let mem1 = memory.clone();
-        let mem2 = memory.clone();
-        let mem3 = memory.clone();
-        let mem4 = memory.clone();
+        let b0 = builtins.clone();
+        let b1 = builtins.clone();
+        let b2 = builtins.clone();
+        let b3 = builtins.clone();
+        let b4 = builtins.clone();
 
         let imports = [
             Extern::Memory(memory.clone()),
             Extern::Func(Func::wrap1(module.store(), abort)),
             Extern::Func(Func::wrap2(module.store(), move |id, ctx| {
-                builtin0(&func0, &mem0, ValueAddr(id), ValueAddr(ctx))
+                i32::from(b0.builtin0(id, ValueAddr(ctx)))
             })),
             Extern::Func(Func::wrap3(module.store(), move |id, ctx, a| {
-                builtin1(&func1, &mem1, id, ValueAddr(ctx), ValueAddr(a))
+                i32::from(b1.builtin1(id, ValueAddr(ctx), ValueAddr(a)))
             })),
             Extern::Func(Func::wrap4(module.store(), move |id, ctx, a, b| {
-                builtin2(
-                    &func2,
-                    &mem2,
+                i32::from(b2.builtin2(id, ValueAddr(ctx), ValueAddr(a), ValueAddr(b)))
+            })),
+            Extern::Func(Func::wrap5(module.store(), move |id, ctx, a, b, c| {
+                i32::from(b3.builtin3(id, ValueAddr(ctx), ValueAddr(a), ValueAddr(b), ValueAddr(c)))
+            })),
+            Extern::Func(Func::wrap6(module.store(), move |id, ctx, a, b, c, d| {
+                i32::from(b4.builtin4(
                     id,
                     ValueAddr(ctx),
                     ValueAddr(a),
                     ValueAddr(b),
-                )
-            })),
-            Extern::Func(Func::wrap5(module.store(), move |id, ctx, a, b, c| {
-                builtin3(&func3, &mem3, id, ValueAddr(ctx), ValueAddr(a), ValueAddr(b), ValueAddr(c))
-            })),
-            Extern::Func(Func::wrap6(module.store(), move |id, ctx, a, b, c, d | {
-                builtin4(&func4, &mem4, id, ValueAddr(ctx), ValueAddr(a), ValueAddr(b), ValueAddr(c), ValueAddr(d))
+                    ValueAddr(c),
+                    ValueAddr(d),
+                ))
             })),
         ];
 
         let instance = Instance::new(module, &imports).map_err(|e| Error::Wasm(e))?;
-        functions.replace(instance)?;
+        let functions = Functions::from_instance(instance.clone())?;
+        builtins.replace(functions.clone(), memory.clone())?;
 
         // Load the data
         let data = "{}";
@@ -125,7 +129,7 @@ impl Policy {
         let data_heap_ptr = base_heap_ptr;
         let data_heap_top = base_heap_top;
 
-        let mut policy = Policy {
+        let policy = Policy {
             functions,
             memory,
             data_addr,
@@ -134,9 +138,6 @@ impl Policy {
             data_heap_ptr,
             data_heap_top,
         };
-
-        let builtins = policy.builtins()?;
-        println!("builtins: {}", builtins);
 
         Ok(policy)
     }
@@ -187,7 +188,11 @@ impl Policy {
     }
 }
 
-fn dump_json(functions: &Functions, memory: &Memory, addr: ValueAddr) -> Result<String, Error> {
+pub(crate) fn dump_json(
+    functions: &Functions,
+    memory: &Memory,
+    addr: ValueAddr,
+) -> Result<String, Error> {
     let raw_addr = functions.json_dump(addr)?;
     let s = unsafe {
         let p = memory.data_ptr().offset(raw_addr.0 as isize);
@@ -198,7 +203,11 @@ fn dump_json(functions: &Functions, memory: &Memory, addr: ValueAddr) -> Result<
     Ok(s)
 }
 
-fn load_json(functions: &Functions, memory: &Memory, value: &str) -> Result<ValueAddr, Error> {
+pub(crate) fn load_json(
+    functions: &Functions,
+    memory: &Memory,
+    value: &str,
+) -> Result<ValueAddr, Error> {
     let raw_addr = functions.malloc(value.as_bytes().len())?;
     unsafe {
         std::ptr::copy_nonoverlapping(
@@ -213,97 +222,6 @@ fn load_json(functions: &Functions, memory: &Memory, value: &str) -> Result<Valu
 
 fn abort(_a: i32) {
     println!("abort");
-}
-
-macro_rules! btry {
-    ($expr:expr) => {
-        match $expr {
-            ::std::result::Result::Ok(val) => val,
-            ::std::result::Result::Err(err) => {
-                println!("builtin error: {}", err);
-                return 0;
-            }
-        }
-    };
-}
-
-fn builtin0(_functions: &Functions, _memory: &Memory, _id: ValueAddr, _ctx_addr: ValueAddr) -> i32 {
-    println!("builtin0");
-    0
-}
-
-fn builtin1(
-    functions: &Functions,
-    memory: &Memory,
-    _id: i32,
-    _ctx_addr: ValueAddr,
-    value: ValueAddr,
-) -> i32 {
-    let val = btry!(dump_json(functions, memory, value)
-        .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
-
-    let len = match val {
-        Value::Array(ref v) => v.len(),
-        Value::Object(ref v) => v.len(),
-        Value::Set(ref v) => v.len(),
-        _ => return 0,
-    };
-
-    let serialized = btry!(serde_json::to_string(&Value::Number(len.into())));
-    let addr = btry!(load_json(functions, memory, &serialized));
-    addr.0
-}
-
-fn builtin2(
-    functions: &Functions,
-    memory: &Memory,
-    _id: i32,
-    _ctx_addr: ValueAddr,
-    a: ValueAddr,
-    b: ValueAddr,
-) -> i32 {
-    let val1: Value = btry!(dump_json(functions, memory, a)
-        .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
-    let val2: Value = btry!(dump_json(functions, memory, b)
-        .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
-
-    let num1 = btry!(val1
-        .as_i64()
-        .ok_or_else(|| Error::InvalidType("Number", val1)));
-    let num2 = btry!(val2
-        .as_i64()
-        .ok_or_else(|| Error::InvalidType("Number", val2)));
-    let sum = num1 + num2;
-    let serialized = btry!(serde_json::to_string(&Value::Number(sum.into())));
-    let addr = btry!(load_json(functions, memory, &serialized));
-    addr.0
-}
-
-fn builtin3(
-    _functions: &Functions,
-    _memory: &Memory,
-    _id: i32,
-    _ctx_addr: ValueAddr,
-    _a: ValueAddr,
-    _b: ValueAddr,
-    _c: ValueAddr,
-) -> i32 {
-    println!("builtin3");
-    0
-}
-
-fn builtin4(
-    _functions: &Functions,
-    _memory: &Memory,
-    _id: i32,
-    _ctx_addr: ValueAddr,
-    _a: ValueAddr,
-    _b: ValueAddr,
-    _c: ValueAddr,
-    _d: ValueAddr,
-) -> i32 {
-    println!("builtin4");
-    0
 }
 
 #[cfg(test)]

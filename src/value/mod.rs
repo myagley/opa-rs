@@ -70,6 +70,13 @@ impl Value {
         self.as_set().is_some()
     }
 
+    pub fn into_object(self) -> Option<Map<String, Value>> {
+        match self {
+            Value::Object(map) => Some(map),
+            _ => None,
+        }
+    }
+
     pub fn as_object(&self) -> Option<&Map<String, Value>> {
         match *self {
             Value::Object(ref map) => Some(map),
