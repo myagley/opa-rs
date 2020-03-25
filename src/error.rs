@@ -45,6 +45,10 @@ pub enum Error {
     SerializeJson(#[source] serde_json::Error),
     #[error("Invalid type in builtin function: expected {0}, got {1:?}")]
     InvalidType(&'static str, Value),
+    #[error("Unknown builtin required: {0}")]
+    UnknownBuiltin(String),
+    #[error("Unknown builtin id: {0}")]
+    UnknownBuiltinId(i32),
 }
 
 impl de::Error for Error {

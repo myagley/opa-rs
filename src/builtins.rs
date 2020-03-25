@@ -1,7 +1,8 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use lazy_static::lazy_static;
 use wasmtime::Memory;
 
 use crate::{dump_json, load_json, Error, Functions, Value, ValueAddr};
@@ -15,6 +16,38 @@ macro_rules! btry {
                 return ValueAddr(0);
             }
         }
+    };
+}
+
+type Arity0 = fn() -> Result<Value, Error>;
+type Arity1 = fn(Value) -> Result<Value, Error>;
+type Arity2 = fn(Value, Value) -> Result<Value, Error>;
+type Arity3 = fn(Value, Value, Value) -> Result<Value, Error>;
+type Arity4 = fn(Value, Value, Value, Value) -> Result<Value, Error>;
+
+lazy_static! {
+    static ref BUILTIN0: HashMap<&'static str, Arity0> = { HashMap::new() };
+    static ref BUILTIN1: HashMap<&'static str, Arity1> = {
+        let mut b: HashMap<&'static str, Arity1> = HashMap::new();
+        b.insert("count", count);
+        b
+    };
+    static ref BUILTIN2: HashMap<&'static str, Arity2> = {
+        let mut b: HashMap<&'static str, Arity2> = HashMap::new();
+        b.insert("plus", plus);
+        b
+    };
+    static ref BUILTIN3: HashMap<&'static str, Arity3> = { HashMap::new() };
+    static ref BUILTIN4: HashMap<&'static str, Arity4> = { HashMap::new() };
+    static ref BUILTIN_NAMES: HashSet<&'static str> = {
+        BUILTIN0
+            .keys()
+            .chain(BUILTIN1.keys())
+            .chain(BUILTIN2.keys())
+            .chain(BUILTIN3.keys())
+            .chain(BUILTIN4.keys())
+            .map(|k| *k)
+            .collect::<HashSet<&'static str>>()
     };
 }
 
@@ -94,6 +127,10 @@ impl Inner {
 
         let mut lookup = HashMap::new();
         for (k, v) in val.into_object().expect("invalid obj check").into_iter() {
+            if !BUILTIN_NAMES.contains(k.as_str()) {
+                return Err(Error::UnknownBuiltin(k));
+            }
+
             if !v.is_i64() {
                 return Err(Error::InvalidType("Number", v));
             }
@@ -108,77 +145,131 @@ impl Inner {
         Ok(inner)
     }
 
-    fn builtin0(&self, _id: i32, _ctx_addr: ValueAddr) -> ValueAddr {
-        println!("builtin0");
-        ValueAddr(0)
+    fn builtin0(&self, id: i32, _ctx_addr: ValueAddr) -> ValueAddr {
+        let name = btry!(self
+            .lookup
+            .get(&id)
+            .ok_or_else(|| Error::UnknownBuiltinId(id)));
+        let func = btry!(BUILTIN0
+            .get(name.as_str())
+            .ok_or_else(|| Error::UnknownBuiltin(name.to_string())));
+        let result = btry!(func());
+
+        let serialized = btry!(serde_json::to_string(&result));
+        btry!(load_json(&self.functions, &self.memory, &serialized))
     }
 
     fn builtin1(&self, id: i32, _ctx_addr: ValueAddr, value: ValueAddr) -> ValueAddr {
-        if let Some(f) = self.lookup.get(&id) {
-            println!("func: {}", f);
-        }
+        let name = btry!(self
+            .lookup
+            .get(&id)
+            .ok_or_else(|| Error::UnknownBuiltinId(id)));
+        let func = btry!(BUILTIN1
+            .get(name.as_str())
+            .ok_or_else(|| Error::UnknownBuiltin(name.to_string())));
 
         let val = btry!(dump_json(&self.functions, &self.memory, value)
             .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
 
-        let result = count(&val);
+        let result = btry!(func(val));
 
         let serialized = btry!(serde_json::to_string(&result));
         btry!(load_json(&self.functions, &self.memory, &serialized))
     }
 
     fn builtin2(&self, id: i32, _ctx_addr: ValueAddr, a: ValueAddr, b: ValueAddr) -> ValueAddr {
-        if let Some(f) = self.lookup.get(&id) {
-            println!("func: {}", f);
-        }
+        let name = btry!(self
+            .lookup
+            .get(&id)
+            .ok_or_else(|| Error::UnknownBuiltinId(id)));
+        let func = btry!(BUILTIN2
+            .get(name.as_str())
+            .ok_or_else(|| Error::UnknownBuiltin(name.to_string())));
 
-        let val1: Value = btry!(dump_json(&self.functions, &self.memory, a)
+        let val1 = btry!(dump_json(&self.functions, &self.memory, a)
             .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
-        let val2: Value = btry!(dump_json(&self.functions, &self.memory, b)
+        let val2 = btry!(dump_json(&self.functions, &self.memory, b)
             .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
+        let result = btry!(func(val1, val2));
 
-        let num1 = btry!(val1
-            .as_i64()
-            .ok_or_else(|| Error::InvalidType("Number", val1)));
-        let num2 = btry!(val2
-            .as_i64()
-            .ok_or_else(|| Error::InvalidType("Number", val2)));
-        let sum = num1 + num2;
-        let serialized = btry!(serde_json::to_string(&Value::Number(sum.into())));
+        let serialized = btry!(serde_json::to_string(&result));
         btry!(load_json(&self.functions, &self.memory, &serialized))
     }
 
     fn builtin3(
         &self,
-        _id: i32,
+        id: i32,
         _ctx_addr: ValueAddr,
-        _a: ValueAddr,
-        _b: ValueAddr,
-        _c: ValueAddr,
+        a: ValueAddr,
+        b: ValueAddr,
+        c: ValueAddr,
     ) -> ValueAddr {
-        println!("builtin3");
-        ValueAddr(0)
+        let name = btry!(self
+            .lookup
+            .get(&id)
+            .ok_or_else(|| Error::UnknownBuiltinId(id)));
+        let func = btry!(BUILTIN3
+            .get(name.as_str())
+            .ok_or_else(|| Error::UnknownBuiltin(name.to_string())));
+
+        let val1 = btry!(dump_json(&self.functions, &self.memory, a)
+            .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
+        let val2 = btry!(dump_json(&self.functions, &self.memory, b)
+            .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
+        let val3 = btry!(dump_json(&self.functions, &self.memory, c)
+            .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
+        let result = btry!(func(val1, val2, val3));
+
+        let serialized = btry!(serde_json::to_string(&result));
+        btry!(load_json(&self.functions, &self.memory, &serialized))
     }
 
     fn builtin4(
         &self,
-        _id: i32,
+        id: i32,
         _ctx_addr: ValueAddr,
-        _a: ValueAddr,
-        _b: ValueAddr,
-        _c: ValueAddr,
-        _d: ValueAddr,
+        a: ValueAddr,
+        b: ValueAddr,
+        c: ValueAddr,
+        d: ValueAddr,
     ) -> ValueAddr {
-        println!("builtin4");
-        ValueAddr(0)
+        let name = btry!(self
+            .lookup
+            .get(&id)
+            .ok_or_else(|| Error::UnknownBuiltinId(id)));
+        let func = btry!(BUILTIN4
+            .get(name.as_str())
+            .ok_or_else(|| Error::UnknownBuiltin(name.to_string())));
+
+        let val1 = btry!(dump_json(&self.functions, &self.memory, a)
+            .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
+        let val2 = btry!(dump_json(&self.functions, &self.memory, b)
+            .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
+        let val3 = btry!(dump_json(&self.functions, &self.memory, c)
+            .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
+        let val4 = btry!(dump_json(&self.functions, &self.memory, d)
+            .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
+        let result = btry!(func(val1, val2, val3, val4));
+
+        let serialized = btry!(serde_json::to_string(&result));
+        btry!(load_json(&self.functions, &self.memory, &serialized))
     }
 }
 
-fn count(a: &Value) -> Value {
-    match a {
+fn count(a: Value) -> Result<Value, Error> {
+    let v = match a {
         Value::Array(ref v) => Value::Number(v.len().into()),
         Value::Object(ref v) => Value::Number(v.len().into()),
         Value::Set(ref v) => Value::Number(v.len().into()),
+        Value::String(ref v) => Value::Number(v.len().into()),
         _ => Value::Null,
-    }
+    };
+    Ok(v)
+}
+
+fn plus(a: Value, b: Value) -> Result<Value, Error> {
+    let num1 = a.as_i64().ok_or_else(|| Error::InvalidType("Number", a))?;
+    let num2 = b.as_i64().ok_or_else(|| Error::InvalidType("Number", b))?;
+    let sum = num1 + num2;
+    Ok(Value::Number(sum.into()))
 }
