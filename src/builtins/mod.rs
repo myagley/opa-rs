@@ -12,6 +12,7 @@ mod arrays;
 mod numbers;
 mod objects;
 mod sets;
+mod types;
 
 macro_rules! btry {
     ($expr:expr) => {
@@ -49,6 +50,15 @@ lazy_static! {
 
         b.insert("intersection", sets::intersection1);
         b.insert("union", sets::union1);
+
+        b.insert("is_number", types::is_number);
+        b.insert("is_string", types::is_string);
+        b.insert("is_boolean", types::is_boolean);
+        b.insert("is_array", types::is_array);
+        b.insert("is_set", types::is_set);
+        b.insert("is_is_object", types::is_object);
+        b.insert("is_null", types::is_null);
+        b.insert("type_name", types::type_name);
         b
     };
     static ref BUILTIN2: HashMap<&'static str, Arity2> = {
@@ -170,11 +180,8 @@ impl Inner {
             if !BUILTIN_NAMES.contains(k.as_str()) {
                 return Err(Error::UnknownBuiltin(k));
             }
-
-            if !v.is_i64() {
-                return Err(Error::InvalidType("Number", v));
-            }
-            lookup.insert(v.as_i64().expect("invalid i64 check") as i32, k);
+            let v = v.try_into_i64()?;
+            lookup.insert(v as i32, k);
         }
 
         let inner = Inner {

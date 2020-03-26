@@ -109,7 +109,7 @@ impl Value {
     pub fn try_into_set(self) -> Result<Set<Value>, Error> {
         match self {
             Value::Set(v) => Ok(v),
-            v => Err(Error::InvalidType("Set", v)),
+            v => Err(Error::InvalidType("set", v)),
         }
     }
 
@@ -134,7 +134,7 @@ impl Value {
     pub fn try_into_object(self) -> Result<Map<String, Value>, Error> {
         match self {
             Value::Object(map) => Ok(map),
-            v => Err(Error::InvalidType("Object", v)),
+            v => Err(Error::InvalidType("object", v)),
         }
     }
 
@@ -159,7 +159,7 @@ impl Value {
     pub fn try_into_array(self) -> Result<Vec<Value>, Error> {
         match self {
             Value::Array(array) => Ok(array),
-            v => Err(Error::InvalidType("Array", v)),
+            v => Err(Error::InvalidType("array", v)),
         }
     }
 
@@ -184,7 +184,7 @@ impl Value {
     pub fn try_into_string(self) -> Result<String, Error> {
         match self {
             Value::String(string) => Ok(string),
-            v => Err(Error::InvalidType("String", v)),
+            v => Err(Error::InvalidType("string", v)),
         }
     }
 
@@ -251,7 +251,7 @@ impl Value {
     pub fn try_into_bool(self) -> Result<bool, Error> {
         match self {
             Value::Bool(b) => Ok(b),
-            v => Err(Error::InvalidType("Bool", v)),
+            v => Err(Error::InvalidType("bool", v)),
         }
     }
 

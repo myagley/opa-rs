@@ -3,7 +3,7 @@ package example
 default allow = false                               # unless otherwise defined, allow is false */
 
 allow = true {                                      # allow is true if...
-    count(s1) == 1                           # there are zero violations.
+    count(violation) == 0                           # there are zero violations.
 }
 
 violation[server.id] {                              # a server is in the violation set if...

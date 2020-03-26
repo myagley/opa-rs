@@ -14,7 +14,7 @@ macro_rules! unary_op {
                     let result = val.$op();
                     Value::Number(result.into())
                 }
-                val => return Err(Error::InvalidType("Number", val)),
+                val => return Err(Error::InvalidType("number", val)),
             };
             Ok(v)
         }
@@ -37,7 +37,7 @@ macro_rules! binary_op {
                     let result = left $op right;
                     Value::Number(result.into())
                 },
-                (a, _) => return Err(Error::InvalidType("Number", a)),
+                (a, _) => return Err(Error::InvalidType("number", a)),
             };
             Ok(v)
         }
@@ -60,7 +60,7 @@ macro_rules! binary_op_func {
                     let result = left.$op(right);
                     Value::Number(result.into())
                 }
-                (a, _) => return Err(Error::InvalidType("Number", a)),
+                (a, _) => return Err(Error::InvalidType("number", a)),
             };
             Ok(v)
         }
@@ -94,7 +94,7 @@ pub fn minus(left: Value, right: Value) -> Result<Value, Error> {
         (Value::Set(left), Value::Set(right)) => {
             Value::Set(left.difference(&right).cloned().collect())
         }
-        (a, _) => return Err(Error::InvalidType("Number", a)),
+        (a, _) => return Err(Error::InvalidType("number", a)),
     };
     Ok(v)
 }
@@ -102,13 +102,11 @@ pub fn minus(left: Value, right: Value) -> Result<Value, Error> {
 pub fn round(val: Value) -> Result<Value, Error> {
     let v = match val {
         val if val.is_i64() => {
-            let val = val.as_i64().ok_or_else(|| Error::InvalidType("i64", val))?;
+            let val = val.try_into_i64()?;
             Value::Number(val.into())
         }
         Value::Number(val) => {
-            let val = val
-                .as_f64()
-                .ok_or_else(|| Error::InvalidType("i64", val.into()))?;
+            let val = val.try_into_f64()?;
             let result = val.round();
             Value::Number(result.into())
         }
