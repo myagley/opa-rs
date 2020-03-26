@@ -48,9 +48,6 @@ lazy_static! {
         b.insert("abs", numbers::abs);
         b.insert("round", numbers::round);
 
-        b.insert("intersection", sets::intersection1);
-        b.insert("union", sets::union1);
-
         b.insert("is_number", types::is_number);
         b.insert("is_string", types::is_string);
         b.insert("is_boolean", types::is_boolean);
@@ -73,8 +70,8 @@ lazy_static! {
 
         b.insert("object.remove", objects::remove);
 
-        b.insert("and", sets::intersection2);
-        b.insert("or", sets::union2);
+        b.insert("and", sets::and);
+        b.insert("or", sets::or);
         b
     };
     static ref BUILTIN3: HashMap<&'static str, Arity3> = {
@@ -82,15 +79,10 @@ lazy_static! {
         b.insert("array.slice", arrays::slice);
 
         b.insert("object.get", objects::get);
-
-        b.insert("intersection", sets::intersection3);
-        b.insert("union", sets::union3);
         b
     };
     static ref BUILTIN4: HashMap<&'static str, Arity4> = {
-        let mut b: HashMap<&'static str, Arity4> = HashMap::new();
-        b.insert("intersection", sets::intersection4);
-        b.insert("union", sets::union4);
+        let b: HashMap<&'static str, Arity4> = HashMap::new();
         b
     };
     static ref BUILTIN_NAMES: HashSet<&'static str> = {
