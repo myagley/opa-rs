@@ -5,14 +5,12 @@ macro_rules! unary_op {
         pub fn $name(val: Value) -> Result<Value, Error> {
             let v = match val {
                 val if val.is_i64() => {
-                    let val = val.as_i64().ok_or_else(|| Error::InvalidType("i64", val))?;
+                    let val = val.try_into_i64()?;
                     let result = val.$op();
                     Value::Number(result.into())
                 }
                 Value::Number(val) => {
-                    let val = val
-                        .as_f64()
-                        .ok_or_else(|| Error::InvalidType("i64", val.into()))?;
+                    let val = val.try_into_f64()?;
                     let result = val.$op();
                     Value::Number(result.into())
                 }
@@ -28,14 +26,14 @@ macro_rules! binary_op {
         pub fn $name(left: Value, right: Value) -> Result<Value, Error> {
             let v = match (left, right) {
                 (left, right) if left.is_i64() && right.is_i64() => {
-                    let left = left.as_i64().ok_or_else(|| Error::InvalidType("i64", left))?;
-                    let right = right.as_i64().ok_or_else(|| Error::InvalidType("i64", right))?;
+                    let left = left.try_into_i64()?;
+                    let right = right.try_into_i64()?;
                     let result = left $op right;
                     Value::Number(result.into())
                 },
                 (Value::Number(left), Value::Number(right)) => {
-                    let left = left.as_f64().ok_or_else(|| Error::InvalidType("f64", left.into()))?;
-                    let right = right.as_f64().ok_or_else(|| Error::InvalidType("f64", right.into()))?;
+                    let left = left.try_into_f64()?;
+                    let right = right.try_into_f64()?;
                     let result = left $op right;
                     Value::Number(result.into())
                 },
@@ -51,22 +49,14 @@ macro_rules! binary_op_func {
         pub fn $name(left: Value, right: Value) -> Result<Value, Error> {
             let v = match (left, right) {
                 (left, right) if left.is_i64() && right.is_i64() => {
-                    let left = left
-                        .as_i64()
-                        .ok_or_else(|| Error::InvalidType("i64", left))?;
-                    let right = right
-                        .as_i64()
-                        .ok_or_else(|| Error::InvalidType("i64", right))?;
+                    let left = left.try_into_i64()?;
+                    let right = right.try_into_i64()?;
                     let result = left.$op(right);
                     Value::Number(result.into())
                 }
                 (Value::Number(left), Value::Number(right)) => {
-                    let left = left
-                        .as_f64()
-                        .ok_or_else(|| Error::InvalidType("f64", left.into()))?;
-                    let right = right
-                        .as_f64()
-                        .ok_or_else(|| Error::InvalidType("f64", right.into()))?;
+                    let left = left.try_into_f64()?;
+                    let right = right.try_into_f64()?;
                     let result = left.$op(right);
                     Value::Number(result.into())
                 }
@@ -80,13 +70,34 @@ macro_rules! binary_op_func {
 unary_op!(abs, abs);
 
 binary_op!(plus, +);
-binary_op!(minus, -);
 binary_op!(mul, *);
 binary_op!(div, /);
 binary_op!(rem, %);
 
 binary_op_func!(min, min);
 binary_op_func!(max, max);
+
+pub fn minus(left: Value, right: Value) -> Result<Value, Error> {
+    let v = match (left, right) {
+        (left, right) if left.is_i64() && right.is_i64() => {
+            let left = left.try_into_i64()?;
+            let right = right.try_into_i64()?;
+            let result = left - right;
+            Value::Number(result.into())
+        }
+        (Value::Number(left), Value::Number(right)) => {
+            let left = left.try_into_f64()?;
+            let right = right.try_into_f64()?;
+            let result = left - right;
+            Value::Number(result.into())
+        }
+        (Value::Set(left), Value::Set(right)) => {
+            Value::Set(left.difference(&right).cloned().collect())
+        }
+        (a, _) => return Err(Error::InvalidType("Number", a)),
+    };
+    Ok(v)
+}
 
 pub fn round(val: Value) -> Result<Value, Error> {
     let v = match val {

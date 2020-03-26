@@ -7,6 +7,8 @@ mod index;
 mod number;
 mod ser;
 
+use crate::error::Error;
+
 pub use self::index::Index;
 pub use self::number::Number;
 
@@ -104,6 +106,13 @@ impl Value {
         index.index_into_mut(self)
     }
 
+    pub fn try_into_set(self) -> Result<Set<Value>, Error> {
+        match self {
+            Value::Set(v) => Ok(v),
+            v => Err(Error::InvalidType("Set", v)),
+        }
+    }
+
     pub fn as_set(&self) -> Option<&Set<Value>> {
         match *self {
             Value::Set(ref set) => Some(set),
@@ -122,10 +131,10 @@ impl Value {
         self.as_set().is_some()
     }
 
-    pub fn into_object(self) -> Option<Map<String, Value>> {
+    pub fn try_into_object(self) -> Result<Map<String, Value>, Error> {
         match self {
-            Value::Object(map) => Some(map),
-            _ => None,
+            Value::Object(map) => Ok(map),
+            v => Err(Error::InvalidType("Object", v)),
         }
     }
 
@@ -147,6 +156,13 @@ impl Value {
         self.as_object().is_some()
     }
 
+    pub fn try_into_array(self) -> Result<Vec<Value>, Error> {
+        match self {
+            Value::Array(array) => Ok(array),
+            v => Err(Error::InvalidType("Array", v)),
+        }
+    }
+
     pub fn as_array(&self) -> Option<&Vec<Value>> {
         match *self {
             Value::Array(ref array) => Some(array),
@@ -163,6 +179,13 @@ impl Value {
 
     pub fn is_array(&self) -> bool {
         self.as_array().is_some()
+    }
+
+    pub fn try_into_string(self) -> Result<String, Error> {
+        match self {
+            Value::String(string) => Ok(string),
+            v => Err(Error::InvalidType("String", v)),
+        }
     }
 
     pub fn as_str(&self) -> Option<&str> {
@@ -183,6 +206,13 @@ impl Value {
         }
     }
 
+    pub fn try_into_i64(self) -> Result<i64, Error> {
+        match self {
+            Value::Number(n) => n.try_into_i64(),
+            v => Err(Error::InvalidType("i64", v)),
+        }
+    }
+
     pub fn as_i64(&self) -> Option<i64> {
         match *self {
             Value::Number(ref n) => n.as_i64(),
@@ -197,6 +227,13 @@ impl Value {
         }
     }
 
+    pub fn try_into_f64(self) -> Result<f64, Error> {
+        match self {
+            Value::Number(n) => n.try_into_f64(),
+            v => Err(Error::InvalidType("f64", v)),
+        }
+    }
+
     pub fn as_f64(&self) -> Option<f64> {
         match *self {
             Value::Number(ref n) => n.as_f64(),
@@ -208,6 +245,13 @@ impl Value {
         match *self {
             Value::Number(ref n) => n.is_f64(),
             _ => false,
+        }
+    }
+
+    pub fn try_into_bool(self) -> Result<bool, Error> {
+        match self {
+            Value::Bool(b) => Ok(b),
+            v => Err(Error::InvalidType("Bool", v)),
         }
     }
 

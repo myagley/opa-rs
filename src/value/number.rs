@@ -45,11 +45,33 @@ impl Number {
     }
 
     #[inline]
+    pub fn try_into_i64(self) -> Result<i64, Error> {
+        match self.n {
+            N::Int(n) => Ok(n),
+            N::Float(_) => Err(Error::InvalidType("i64", self.into())),
+            N::Ref(ref s) => s
+                .parse()
+                .map_err(|_| Error::InvalidType("i64", self.into())),
+        }
+    }
+
+    #[inline]
     pub fn as_i64(&self) -> Option<i64> {
         match self.n {
             N::Int(n) => Some(n),
             N::Float(_) => None,
             N::Ref(ref s) => s.parse().ok(),
+        }
+    }
+
+    #[inline]
+    pub fn try_into_f64(self) -> Result<f64, Error> {
+        match self.n {
+            N::Int(n) => Ok(n as f64),
+            N::Float(f) => Ok(f.into_inner()),
+            N::Ref(ref s) => s
+                .parse()
+                .map_err(|_| Error::InvalidType("f64", self.into())),
         }
     }
 

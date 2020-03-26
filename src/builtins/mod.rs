@@ -8,7 +8,9 @@ use wasmtime::Memory;
 use crate::{dump_json, load_json, Error, Functions, Value, ValueAddr};
 
 mod aggregates;
+mod arrays;
 mod numbers;
+mod sets;
 
 macro_rules! btry {
     ($expr:expr) => {
@@ -43,19 +45,39 @@ lazy_static! {
 
         b.insert("abs", numbers::abs);
         b.insert("round", numbers::round);
+
+        b.insert("intersection", sets::intersection1);
+        b.insert("union", sets::union1);
         b
     };
     static ref BUILTIN2: HashMap<&'static str, Arity2> = {
         let mut b: HashMap<&'static str, Arity2> = HashMap::new();
+        b.insert("array.concat", arrays::concat);
+
         b.insert("plus", numbers::plus);
         b.insert("minus", numbers::minus);
         b.insert("mul", numbers::mul);
         b.insert("div", numbers::div);
         b.insert("rem", numbers::rem);
+
+        b.insert("and", sets::intersection2);
+        b.insert("or", sets::union2);
         b
     };
-    static ref BUILTIN3: HashMap<&'static str, Arity3> = { HashMap::new() };
-    static ref BUILTIN4: HashMap<&'static str, Arity4> = { HashMap::new() };
+    static ref BUILTIN3: HashMap<&'static str, Arity3> = {
+        let mut b: HashMap<&'static str, Arity3> = HashMap::new();
+        b.insert("array.slice", arrays::slice);
+
+        b.insert("intersection", sets::intersection3);
+        b.insert("union", sets::union3);
+        b
+    };
+    static ref BUILTIN4: HashMap<&'static str, Arity4> = {
+        let mut b: HashMap<&'static str, Arity4> = HashMap::new();
+        b.insert("intersection", sets::intersection4);
+        b.insert("union", sets::union4);
+        b
+    };
     static ref BUILTIN_NAMES: HashSet<&'static str> = {
         BUILTIN0
             .keys()
@@ -138,12 +160,8 @@ impl Inner {
         let val: Value = dump_json(&functions, &memory, builtins_addr)
             .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson))?;
 
-        if !val.is_object() {
-            return Err(Error::InvalidType("Object", val));
-        }
-
         let mut lookup = HashMap::new();
-        for (k, v) in val.into_object().expect("invalid obj check").into_iter() {
+        for (k, v) in val.try_into_object()?.into_iter() {
             if !BUILTIN_NAMES.contains(k.as_str()) {
                 return Err(Error::UnknownBuiltin(k));
             }
