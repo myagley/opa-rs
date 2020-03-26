@@ -1,11 +1,11 @@
 use crate::{Error, Value};
 
 macro_rules! is_func {
-    ($func:ident) => (
+    ($func:ident) => {
         pub fn $func(val: Value) -> Result<Value, Error> {
             Ok(val.$func().into())
         }
-    );
+    };
 }
 
 is_func!(is_number);

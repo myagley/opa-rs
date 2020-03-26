@@ -8,6 +8,8 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1.0"
+chrono = "0.4"
+chrono-tz = "0.5"
 clap = "2.33"
 lazy_static = "1"
 ordered-float = { version = "1.0.2", features = ["serde"] }

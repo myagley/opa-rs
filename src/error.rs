@@ -51,6 +51,10 @@ pub enum Error {
     UnknownBuiltin(String),
     #[error("Unknown builtin id: {0}")]
     UnknownBuiltinId(i32),
+    #[error("Unknown timezone: {0}")]
+    UnknownTimezone(String),
+    #[error("Datetime parse error")]
+    ParseDatetime(#[source] chrono::ParseError),
 }
 
 impl de::Error for Error {

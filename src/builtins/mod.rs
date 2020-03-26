@@ -12,6 +12,7 @@ mod arrays;
 mod numbers;
 mod objects;
 mod sets;
+mod time;
 mod types;
 
 macro_rules! btry {
@@ -33,7 +34,11 @@ type Arity3 = fn(Value, Value, Value) -> Result<Value, Error>;
 type Arity4 = fn(Value, Value, Value, Value) -> Result<Value, Error>;
 
 lazy_static! {
-    static ref BUILTIN0: HashMap<&'static str, Arity0> = { HashMap::new() };
+    static ref BUILTIN0: HashMap<&'static str, Arity0> = {
+        let mut b: HashMap<&'static str, Arity0> = HashMap::new();
+        b.insert("time.now_ns", time::now_ns);
+        b
+    };
     static ref BUILTIN1: HashMap<&'static str, Arity1> = {
         let mut b: HashMap<&'static str, Arity1> = HashMap::new();
         b.insert("all", aggregates::all);
@@ -47,6 +52,11 @@ lazy_static! {
 
         b.insert("abs", numbers::abs);
         b.insert("round", numbers::round);
+
+        b.insert("time.clock", time::clock);
+        b.insert("time.date", time::date);
+        b.insert("time.parse_rfc3339_ns", time::parse_rfc3339_ns);
+        b.insert("time.weekday", time::weekday);
 
         b.insert("is_number", types::is_number);
         b.insert("is_string", types::is_string);
