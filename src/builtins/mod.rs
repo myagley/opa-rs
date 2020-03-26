@@ -10,6 +10,7 @@ use crate::{dump_json, load_json, Error, Functions, Value, ValueAddr};
 mod aggregates;
 mod arrays;
 mod numbers;
+mod objects;
 mod sets;
 
 macro_rules! btry {
@@ -60,6 +61,8 @@ lazy_static! {
         b.insert("div", numbers::div);
         b.insert("rem", numbers::rem);
 
+        b.insert("object.remove", objects::remove);
+
         b.insert("and", sets::intersection2);
         b.insert("or", sets::union2);
         b
@@ -67,6 +70,8 @@ lazy_static! {
     static ref BUILTIN3: HashMap<&'static str, Arity3> = {
         let mut b: HashMap<&'static str, Arity3> = HashMap::new();
         b.insert("array.slice", arrays::slice);
+
+        b.insert("object.get", objects::get);
 
         b.insert("intersection", sets::intersection3);
         b.insert("union", sets::union3);
