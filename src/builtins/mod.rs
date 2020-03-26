@@ -7,6 +7,7 @@ use wasmtime::Memory;
 
 use crate::{dump_json, load_json, Error, Functions, Value, ValueAddr};
 
+mod aggregates;
 mod numbers;
 
 macro_rules! btry {
@@ -31,7 +32,15 @@ lazy_static! {
     static ref BUILTIN0: HashMap<&'static str, Arity0> = { HashMap::new() };
     static ref BUILTIN1: HashMap<&'static str, Arity1> = {
         let mut b: HashMap<&'static str, Arity1> = HashMap::new();
-        b.insert("count", count);
+        b.insert("all", aggregates::all);
+        b.insert("any", aggregates::any);
+        b.insert("count", aggregates::count);
+        b.insert("max", aggregates::max);
+        b.insert("min", aggregates::min);
+        b.insert("product", aggregates::product);
+        b.insert("sort", aggregates::sort);
+        b.insert("sum", aggregates::sum);
+
         b.insert("abs", numbers::abs);
         b.insert("round", numbers::round);
         b
@@ -262,15 +271,4 @@ impl Inner {
         let serialized = btry!(serde_json::to_string(&result));
         btry!(load_json(&self.functions, &self.memory, &serialized))
     }
-}
-
-fn count(a: Value) -> Result<Value, Error> {
-    let v = match a {
-        Value::Array(ref v) => Value::Number(v.len().into()),
-        Value::Object(ref v) => Value::Number(v.len().into()),
-        Value::Set(ref v) => Value::Number(v.len().into()),
-        Value::String(ref v) => Value::Number(v.len().into()),
-        _ => Value::Null,
-    };
-    Ok(v)
 }
