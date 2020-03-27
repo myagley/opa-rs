@@ -57,6 +57,8 @@ pub enum Error {
     ParseDatetime(#[source] chrono::ParseError),
     #[error("Invalid ip network.")]
     InvalidIpNetwork(#[source] ipnetwork::IpNetworkError),
+    #[error("Invalid regex.")]
+    InvalidRegex(#[source] regex::Error),
 }
 
 impl de::Error for Error {

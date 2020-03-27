@@ -12,6 +12,7 @@ mod arrays;
 mod net;
 mod numbers;
 mod objects;
+mod regex;
 mod sets;
 mod time;
 mod types;
@@ -87,6 +88,8 @@ lazy_static! {
         b.insert("net.cidr_intersects", net::cidr_intersects);
 
         b.insert("object.remove", objects::remove);
+
+        b.insert("re_match", regex::re_match);
 
         b.insert("and", sets::and);
         b.insert("or", sets::or);
