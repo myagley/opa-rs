@@ -11,6 +11,7 @@ anyhow = "1.0"
 chrono = "0.4"
 chrono-tz = "0.5"
 clap = "2.33"
+ipnetwork = "0.16"
 lazy_static = "1"
 ordered-float = { version = "1.0.2", features = ["serde"] }
 serde = "1"

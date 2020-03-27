@@ -39,9 +39,9 @@ pub enum Error {
     DeserializeValue(String),
     #[error("Failed to serialize: {0}")]
     SerializeValue(String),
-    #[error("Failed to deserialize JSON")]
+    #[error("Failed to deserialize JSON.")]
     DeserializeJson(#[source] serde_json::Error),
-    #[error("Failed to serialize JSON")]
+    #[error("Failed to serialize JSON.")]
     SerializeJson(#[source] serde_json::Error),
     #[error("Invalid type in builtin function: expected {0}, got {1:?}")]
     InvalidType(&'static str, Value),
@@ -53,8 +53,10 @@ pub enum Error {
     UnknownBuiltinId(i32),
     #[error("Unknown timezone: {0}")]
     UnknownTimezone(String),
-    #[error("Datetime parse error")]
+    #[error("Failed to parse datetime.")]
     ParseDatetime(#[source] chrono::ParseError),
+    #[error("Invalid ip network.")]
+    InvalidIpNetwork(#[source] ipnetwork::IpNetworkError),
 }
 
 impl de::Error for Error {

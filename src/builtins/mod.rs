@@ -9,6 +9,7 @@ use crate::{dump_json, load_json, Error, Functions, Value, ValueAddr};
 
 mod aggregates;
 mod arrays;
+mod net;
 mod numbers;
 mod objects;
 mod sets;
@@ -53,6 +54,8 @@ lazy_static! {
         b.insert("abs", numbers::abs);
         b.insert("round", numbers::round);
 
+        b.insert("net.cidr_expand", net::cidr_expand);
+
         b.insert("time.clock", time::clock);
         b.insert("time.date", time::date);
         b.insert("time.parse_rfc3339_ns", time::parse_rfc3339_ns);
@@ -77,6 +80,9 @@ lazy_static! {
         b.insert("mul", numbers::mul);
         b.insert("div", numbers::div);
         b.insert("rem", numbers::rem);
+
+        b.insert("net.cidr_contains", net::cidr_contains);
+        b.insert("net.cidr_intersects", net::cidr_intersects);
 
         b.insert("object.remove", objects::remove);
 
