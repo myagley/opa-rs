@@ -42,6 +42,8 @@ lazy_static! {
     };
     static ref BUILTIN1: HashMap<&'static str, Arity1> = {
         let mut b: HashMap<&'static str, Arity1> = HashMap::new();
+        b.insert("trace", trace);
+
         b.insert("all", aggregates::all);
         b.insert("any", aggregates::any);
         b.insert("count", aggregates::count);
@@ -309,4 +311,8 @@ impl Inner {
         let serialized = btry!(serde_json::to_string(&result));
         btry!(load_json(&self.functions, &self.memory, &serialized))
     }
+}
+
+fn trace(value: Value) -> Result<Value, Error> {
+    value.try_into_string().map(|_| true.into())
 }
