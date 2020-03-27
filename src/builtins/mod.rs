@@ -7,6 +7,16 @@ use wasmtime::Memory;
 
 use crate::{dump_json, load_json, Error, Functions, Value, ValueAddr};
 
+mod aggregates;
+mod arrays;
+mod net;
+mod numbers;
+mod objects;
+mod regex;
+mod sets;
+mod time;
+mod types;
+
 macro_rules! btry {
     ($expr:expr) => {
         match $expr {
@@ -26,19 +36,76 @@ type Arity3 = fn(Value, Value, Value) -> Result<Value, Error>;
 type Arity4 = fn(Value, Value, Value, Value) -> Result<Value, Error>;
 
 lazy_static! {
-    static ref BUILTIN0: HashMap<&'static str, Arity0> = { HashMap::new() };
+    static ref BUILTIN0: HashMap<&'static str, Arity0> = {
+        let mut b: HashMap<&'static str, Arity0> = HashMap::new();
+        b.insert("time.now_ns", time::now_ns);
+        b
+    };
     static ref BUILTIN1: HashMap<&'static str, Arity1> = {
         let mut b: HashMap<&'static str, Arity1> = HashMap::new();
-        b.insert("count", count);
+        b.insert("trace", trace);
+
+        b.insert("all", aggregates::all);
+        b.insert("any", aggregates::any);
+        b.insert("count", aggregates::count);
+        b.insert("max", aggregates::max);
+        b.insert("min", aggregates::min);
+        b.insert("product", aggregates::product);
+        b.insert("sort", aggregates::sort);
+        b.insert("sum", aggregates::sum);
+
+        b.insert("abs", numbers::abs);
+        b.insert("round", numbers::round);
+
+        b.insert("net.cidr_expand", net::cidr_expand);
+
+        b.insert("time.clock", time::clock);
+        b.insert("time.date", time::date);
+        b.insert("time.parse_rfc3339_ns", time::parse_rfc3339_ns);
+        b.insert("time.weekday", time::weekday);
+
+        b.insert("is_number", types::is_number);
+        b.insert("is_string", types::is_string);
+        b.insert("is_boolean", types::is_boolean);
+        b.insert("is_array", types::is_array);
+        b.insert("is_set", types::is_set);
+        b.insert("is_is_object", types::is_object);
+        b.insert("is_null", types::is_null);
+        b.insert("type_name", types::type_name);
         b
     };
     static ref BUILTIN2: HashMap<&'static str, Arity2> = {
         let mut b: HashMap<&'static str, Arity2> = HashMap::new();
-        b.insert("plus", plus);
+        b.insert("array.concat", arrays::concat);
+
+        b.insert("plus", numbers::plus);
+        b.insert("minus", numbers::minus);
+        b.insert("mul", numbers::mul);
+        b.insert("div", numbers::div);
+        b.insert("rem", numbers::rem);
+
+        b.insert("net.cidr_contains", net::cidr_contains);
+        b.insert("net.cidr_intersects", net::cidr_intersects);
+
+        b.insert("object.remove", objects::remove);
+
+        b.insert("re_match", regex::re_match);
+
+        b.insert("and", sets::and);
+        b.insert("or", sets::or);
         b
     };
-    static ref BUILTIN3: HashMap<&'static str, Arity3> = { HashMap::new() };
-    static ref BUILTIN4: HashMap<&'static str, Arity4> = { HashMap::new() };
+    static ref BUILTIN3: HashMap<&'static str, Arity3> = {
+        let mut b: HashMap<&'static str, Arity3> = HashMap::new();
+        b.insert("array.slice", arrays::slice);
+
+        b.insert("object.get", objects::get);
+        b
+    };
+    static ref BUILTIN4: HashMap<&'static str, Arity4> = {
+        let b: HashMap<&'static str, Arity4> = HashMap::new();
+        b
+    };
     static ref BUILTIN_NAMES: HashSet<&'static str> = {
         BUILTIN0
             .keys()
@@ -121,20 +188,13 @@ impl Inner {
         let val: Value = dump_json(&functions, &memory, builtins_addr)
             .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson))?;
 
-        if !val.is_object() {
-            return Err(Error::InvalidType("Object", val));
-        }
-
         let mut lookup = HashMap::new();
-        for (k, v) in val.into_object().expect("invalid obj check").into_iter() {
+        for (k, v) in val.try_into_object()?.into_iter() {
             if !BUILTIN_NAMES.contains(k.as_str()) {
                 return Err(Error::UnknownBuiltin(k));
             }
-
-            if !v.is_i64() {
-                return Err(Error::InvalidType("Number", v));
-            }
-            lookup.insert(v.as_i64().expect("invalid i64 check") as i32, k);
+            let v = v.try_into_i64()?;
+            lookup.insert(v as i32, k);
         }
 
         let inner = Inner {
@@ -256,20 +316,6 @@ impl Inner {
     }
 }
 
-fn count(a: Value) -> Result<Value, Error> {
-    let v = match a {
-        Value::Array(ref v) => Value::Number(v.len().into()),
-        Value::Object(ref v) => Value::Number(v.len().into()),
-        Value::Set(ref v) => Value::Number(v.len().into()),
-        Value::String(ref v) => Value::Number(v.len().into()),
-        _ => Value::Null,
-    };
-    Ok(v)
-}
-
-fn plus(a: Value, b: Value) -> Result<Value, Error> {
-    let num1 = a.as_i64().ok_or_else(|| Error::InvalidType("Number", a))?;
-    let num2 = b.as_i64().ok_or_else(|| Error::InvalidType("Number", b))?;
-    let sum = num1 + num2;
-    Ok(Value::Number(sum.into()))
+fn trace(value: Value) -> Result<Value, Error> {
+    value.try_into_string().map(|_| true.into())
 }
