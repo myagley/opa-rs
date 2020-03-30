@@ -1,9 +1,19 @@
-use std::fs;
+use std::{fs, io};
 
 use clap::{App, Arg};
 use policy::Policy;
+use tracing::Level;
+use tracing_subscriber::{fmt, EnvFilter};
 
 fn main() -> Result<(), anyhow::Error> {
+    let subscriber = fmt::Subscriber::builder()
+        .with_ansi(atty::is(atty::Stream::Stderr))
+        .with_max_level(Level::TRACE)
+        .with_writer(io::stderr)
+        .with_env_filter(EnvFilter::from_default_env())
+        .finish();
+    let _ = tracing::subscriber::set_global_default(subscriber);
+
     let matches = App::new("policy")
         .arg(
             Arg::with_name("policy")

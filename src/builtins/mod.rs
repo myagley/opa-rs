@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use lazy_static::lazy_static;
+use tracing::{debug, error};
 use wasmtime::Memory;
 
 use crate::{dump_json, load_json, Error, Functions, Value, ValueAddr};
@@ -22,7 +23,7 @@ macro_rules! btry {
         match $expr {
             ::std::result::Result::Ok(val) => val,
             ::std::result::Result::Err(err) => {
-                println!("builtin error: {}", err);
+                error!(msg = "error processing builtin function", error = %err);
                 return ValueAddr(0);
             }
         }
@@ -213,7 +214,9 @@ impl Inner {
         let func = btry!(BUILTIN0
             .get(name.as_str())
             .ok_or_else(|| Error::UnknownBuiltin(name.to_string())));
+        debug!(name = %name, arity = 0, "calling builtin function...");
         let result = btry!(func());
+        debug!(name = %name, arity = 0, result = ?result, "called builtin function.");
 
         let serialized = btry!(serde_json::to_string(&result));
         btry!(load_json(&self.functions, &self.memory, &serialized))
@@ -231,7 +234,9 @@ impl Inner {
         let val = btry!(dump_json(&self.functions, &self.memory, value)
             .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
 
+        debug!(name = %name, arity = 1, arg0 = ?val, "calling builtin function...");
         let result = btry!(func(val));
+        debug!(name = %name, arity = 1, result = ?result, "called builtin function.");
 
         let serialized = btry!(serde_json::to_string(&result));
         btry!(load_json(&self.functions, &self.memory, &serialized))
@@ -250,7 +255,10 @@ impl Inner {
             .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
         let val2 = btry!(dump_json(&self.functions, &self.memory, b)
             .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
+
+        debug!(name = %name, arity = 2, arg0 = ?val1, arg1 = ?val2, "calling builtin function...");
         let result = btry!(func(val1, val2));
+        debug!(name = %name, arity = 2, result = ?result, "called builtin function.");
 
         let serialized = btry!(serde_json::to_string(&result));
         btry!(load_json(&self.functions, &self.memory, &serialized))
@@ -278,7 +286,10 @@ impl Inner {
             .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
         let val3 = btry!(dump_json(&self.functions, &self.memory, c)
             .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
+
+        debug!(name = %name, arity = 3, arg0 = ?val1, arg1 = ?val2, arg2 = ?val3, "calling builtin function...");
         let result = btry!(func(val1, val2, val3));
+        debug!(name = %name, arity = 3, result = ?result, "called builtin function.");
 
         let serialized = btry!(serde_json::to_string(&result));
         btry!(load_json(&self.functions, &self.memory, &serialized))
@@ -309,7 +320,10 @@ impl Inner {
             .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
         let val4 = btry!(dump_json(&self.functions, &self.memory, d)
             .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
+
+        debug!(name = %name, arity = 4, arg0 = ?val1, arg1 = ?val2, arg2 = ?val3, arg3 = ?val4, "calling builtin function...");
         let result = btry!(func(val1, val2, val3, val4));
+        debug!(name = %name, arity = 4, result = ?result, "called builtin function.");
 
         let serialized = btry!(serde_json::to_string(&result));
         btry!(load_json(&self.functions, &self.memory, &serialized))
