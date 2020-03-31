@@ -9,10 +9,30 @@ use crate::builtins::Builtins;
 use crate::error::Error;
 use crate::ValueAddr;
 
-pub struct Instance(wasmtime::Instance);
+use super::Functions;
+
+#[derive(Clone)]
+pub struct Instance {
+    memory: Memory,
+    functions: Functions,
+}
 
 impl Instance {
-    pub fn new(module: &Module, memory: &Memory, builtins: &Builtins) -> Result<Self, Error> {
+    pub fn new(module: &Module, memory: Memory) -> Result<Self, Error> {
+        // Builtins are tricky to handle.
+        // We need to setup the functions as imports before creating
+        // the instance. However, these functions require an instance to be called.
+        // This is a circular dependency, which needless to say poses problems for
+        // rust.
+        //
+        // To workaround this, we create an empty Builtins struct that we pass to the
+        // imports so they can get a reference. Then, the instance is created and the
+        // Builtins struct is updated with the instance. This is safe because none of
+        // the builtins are called before the instance is created. It makes the Builtins
+        // struct annoyingly complex because we need to use an Arc for shared references
+        // as well as mutate the contents, requiring a RefCell.
+        let builtins = Builtins::default();
+
         let b0 = builtins.clone();
         let b1 = builtins.clone();
         let b2 = builtins.clone();
@@ -48,7 +68,27 @@ impl Instance {
 
         let instance =
             wasmtime::Instance::new(&module.0, &imports).map_err(|e| Error::Wasmtime(e))?;
-        Ok(Instance(instance))
+        let fimpl = FunctionsImpl::from_instance(instance)?;
+        let functions = Functions::from_impl(fimpl)?;
+
+        let instance = Instance { memory, functions };
+        builtins.replace(instance.clone())?;
+
+        Ok(instance)
+    }
+
+    pub fn functions(&self) -> &Functions {
+        &self.functions
+    }
+
+    pub fn memory(&self) -> &Memory {
+        &self.memory
+    }
+}
+
+impl fmt::Debug for Instance {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "Instance")
     }
 }
 
@@ -88,6 +128,7 @@ impl fmt::Debug for Memory {
     }
 }
 
+#[derive(Clone)]
 pub struct Module(wasmtime::Module);
 
 impl Module {
@@ -100,7 +141,7 @@ impl Module {
 
 #[allow(dead_code)]
 pub struct FunctionsImpl {
-    instance: Instance,
+    instance: wasmtime::Instance,
     opa_malloc: Box<dyn Fn(i32) -> Result<i32, Trap>>,
     opa_json_parse: Box<dyn Fn(i32, i32) -> Result<i32, Trap>>,
     opa_json_dump: Box<dyn Fn(i32) -> Result<i32, Trap>>,
@@ -117,93 +158,80 @@ pub struct FunctionsImpl {
 }
 
 impl FunctionsImpl {
-    pub fn from_instance(instance: Instance) -> Result<Self, Error> {
+    fn from_instance(instance: wasmtime::Instance) -> Result<Self, Error> {
         let opa_malloc = instance
-            .0
             .get_export("opa_malloc")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_malloc"))
             .and_then(|f| f.get1::<i32, i32>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_json_parse = instance
-            .0
             .get_export("opa_json_parse")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_json_parse"))
             .and_then(|f| f.get2::<i32, i32, i32>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_json_dump = instance
-            .0
             .get_export("opa_json_dump")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_json_dump"))
             .and_then(|f| f.get1::<i32, i32>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_heap_ptr_get = instance
-            .0
             .get_export("opa_heap_ptr_get")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_heap_ptr_get"))
             .and_then(|f| f.get0::<i32>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_heap_ptr_set = instance
-            .0
             .get_export("opa_heap_ptr_set")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_heap_ptr_set"))
             .and_then(|f| f.get1::<i32, ()>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_heap_top_get = instance
-            .0
             .get_export("opa_heap_top_get")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_heap_top_get"))
             .and_then(|f| f.get0::<i32>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_heap_top_set = instance
-            .0
             .get_export("opa_heap_top_set")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_heap_top_set"))
             .and_then(|f| f.get1::<i32, ()>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_eval_ctx_new = instance
-            .0
             .get_export("opa_eval_ctx_new")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_eval_ctx_new"))
             .and_then(|f| f.get0::<i32>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_eval_ctx_set_input = instance
-            .0
             .get_export("opa_eval_ctx_set_input")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_eval_ctx_set_input"))
             .and_then(|f| f.get2::<i32, i32, ()>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_eval_ctx_set_data = instance
-            .0
             .get_export("opa_eval_ctx_set_data")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_eval_ctx_set_data"))
             .and_then(|f| f.get2::<i32, i32, ()>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_eval_ctx_get_result = instance
-            .0
             .get_export("opa_eval_ctx_get_result")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_eval_ctx_get_result"))
             .and_then(|f| f.get1::<i32, i32>().map_err(|e| Error::Wasmtime(e)))?;
 
         let builtins = instance
-            .0
             .get_export("builtins")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("builtins"))
             .and_then(|f| f.get0::<i32>().map_err(|e| Error::Wasmtime(e)))?;
 
         let eval = instance
-            .0
             .get_export("eval")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("eval"))
