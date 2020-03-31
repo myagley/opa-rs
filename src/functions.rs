@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::wasm::{FunctionsImpl, Instance};
 use crate::{Error, ValueAddr};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Functions {
     inner: Arc<FunctionsImpl>,
 }

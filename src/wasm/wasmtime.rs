@@ -1,5 +1,6 @@
 use std::ffi::{CStr, CString};
 use std::path::Path;
+use std::os::raw::c_char;
 
 use wasmtime::{Extern, Func, Limits, MemoryType, Store, Trap};
 
@@ -8,40 +9,6 @@ use crate::error::Error;
 use crate::ValueAddr;
 
 pub struct Instance(wasmtime::Instance);
-
-#[derive(Clone)]
-pub struct Memory(wasmtime::Memory);
-
-impl Memory {
-    pub fn cstring_at(&self, addr: ValueAddr) -> Result<CString, Error> {
-        let s = unsafe {
-            let p = self.0.data_ptr().offset(addr.0 as isize);
-            CStr::from_ptr(p as *const i8).to_owned()
-        };
-        Ok(s)
-    }
-
-    pub fn set(&self, addr: ValueAddr, value: &[u8]) -> Result<(), Error> {
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                value.as_ptr(),
-                self.0.data_ptr().offset(addr.0 as isize),
-                value.len(),
-            );
-        }
-        Ok(())
-    }
-}
-
-pub struct Module(wasmtime::Module);
-
-impl Module {
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Module, Error> {
-        let store = Store::default();
-        let module = wasmtime::Module::from_file(&store, &path).map_err(Error::Wasm)?;
-        Ok(Module(module))
-    }
-}
 
 impl Instance {
     pub fn new(module: &Module, memory: &Memory, builtins: &Builtins) -> Result<Self, Error> {
@@ -90,11 +57,43 @@ impl Instance {
     }
 }
 
+#[derive(Clone)]
+pub struct Memory(wasmtime::Memory);
+
 impl Memory {
     pub fn from_module(module: &Module) -> Self {
         let memorytype = MemoryType::new(Limits::new(5, None));
         let memory = wasmtime::Memory::new(module.0.store(), memorytype);
         Memory(memory)
+    }
+
+    pub fn cstring_at(&self, addr: ValueAddr) -> Result<CString, Error> {
+        let s = unsafe {
+            let p = self.0.data_ptr().offset(addr.0 as isize);
+            CStr::from_ptr(p as *const c_char).to_owned()
+        };
+        Ok(s)
+    }
+
+    pub fn set(&self, addr: ValueAddr, value: &[u8]) -> Result<(), Error> {
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                value.as_ptr(),
+                self.0.data_ptr().offset(addr.0 as isize),
+                value.len(),
+            );
+        }
+        Ok(())
+    }
+}
+
+pub struct Module(wasmtime::Module);
+
+impl Module {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Module, Error> {
+        let store = Store::default();
+        let module = wasmtime::Module::from_file(&store, &path).map_err(Error::Wasm)?;
+        Ok(Module(module))
     }
 }
 
