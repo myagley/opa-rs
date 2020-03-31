@@ -4,29 +4,30 @@ use std::{fmt, io};
 use serde::{de, ser};
 use thiserror::Error;
 
-// #[cfg(target_arch="x86_64")]
-// use wasmtime::Trap;
-//
+#[cfg(target_arch = "x86_64")]
+use wasmtime::Trap;
+
 use crate::{Value, ValueAddr};
 
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Policy is not initialized properly. This is a bug.")]
     Initialization,
-    // #[cfg(target_arch="x86_64")]
-    // #[error("An occurred from wasmtime.")]
-    // Wasmtime(#[source] anyhow::Error),
+    #[cfg(target_arch = "x86_64")]
+    #[error("An occurred from wasmtime.")]
+    Wasmtime(#[source] anyhow::Error),
+    #[cfg(not(target_arch = "x86_64"))]
     #[error("An occurred from wasmi.")]
     Wasmi(#[source] wasmi::Error),
     #[error("Expected exported function {0}")]
     MissingExport(&'static str),
-    // #[cfg(target_arch="x86_64")]
-    // #[error("A wasm function call trapped.")]
-    // Trap(
-    //     #[source]
-    //     #[from]
-    //     Trap,
-    // ),
+    #[cfg(target_arch = "x86_64")]
+    #[error("A wasm function call trapped.")]
+    Trap(
+        #[source]
+        #[from]
+        Trap,
+    ),
     #[error("Failed to parse json at addr \"{0}\".")]
     JsonParse(ValueAddr),
     #[error("Failed to create CStr.")]

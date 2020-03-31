@@ -1,6 +1,7 @@
 use std::ffi::{CStr, CString};
-use std::path::Path;
+use std::fmt;
 use std::os::raw::c_char;
+use std::path::Path;
 
 use wasmtime::{Extern, Func, Limits, MemoryType, Store, Trap};
 
@@ -31,28 +32,22 @@ impl Instance {
                 i32::from(b2.builtin2(id, ValueAddr(ctx), ValueAddr(a), ValueAddr(b)))
             })),
             Extern::Func(Func::wrap5(module.0.store(), move |id, ctx, a, b, c| {
-                i32::from(b3.builtin3(
-                        id,
-                        ValueAddr(ctx),
-                        ValueAddr(a),
-                        ValueAddr(b),
-                        ValueAddr(c),
-                ))
+                i32::from(b3.builtin3(id, ValueAddr(ctx), ValueAddr(a), ValueAddr(b), ValueAddr(c)))
             })),
             Extern::Func(Func::wrap6(module.0.store(), move |id, ctx, a, b, c, d| {
                 i32::from(b4.builtin4(
-                        id,
-                        ValueAddr(ctx),
-                        ValueAddr(a),
-                        ValueAddr(b),
-                        ValueAddr(c),
-                        ValueAddr(d),
+                    id,
+                    ValueAddr(ctx),
+                    ValueAddr(a),
+                    ValueAddr(b),
+                    ValueAddr(c),
+                    ValueAddr(d),
                 ))
             })),
-            ];
+        ];
 
         let instance =
-            wasmtime::Instance::new(&module.0, &imports).map_err(|e| Error::Wasm(e))?;
+            wasmtime::Instance::new(&module.0, &imports).map_err(|e| Error::Wasmtime(e))?;
         Ok(Instance(instance))
     }
 }
@@ -87,12 +82,18 @@ impl Memory {
     }
 }
 
+impl fmt::Debug for Memory {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "Memory")
+    }
+}
+
 pub struct Module(wasmtime::Module);
 
 impl Module {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Module, Error> {
         let store = Store::default();
-        let module = wasmtime::Module::from_file(&store, &path).map_err(Error::Wasm)?;
+        let module = wasmtime::Module::from_file(&store, &path).map_err(Error::Wasmtime)?;
         Ok(Module(module))
     }
 }
@@ -122,91 +123,91 @@ impl FunctionsImpl {
             .get_export("opa_malloc")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_malloc"))
-            .and_then(|f| f.get1::<i32, i32>().map_err(|e| Error::Wasm(e)))?;
+            .and_then(|f| f.get1::<i32, i32>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_json_parse = instance
             .0
             .get_export("opa_json_parse")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_json_parse"))
-            .and_then(|f| f.get2::<i32, i32, i32>().map_err(|e| Error::Wasm(e)))?;
+            .and_then(|f| f.get2::<i32, i32, i32>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_json_dump = instance
             .0
             .get_export("opa_json_dump")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_json_dump"))
-            .and_then(|f| f.get1::<i32, i32>().map_err(|e| Error::Wasm(e)))?;
+            .and_then(|f| f.get1::<i32, i32>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_heap_ptr_get = instance
             .0
             .get_export("opa_heap_ptr_get")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_heap_ptr_get"))
-            .and_then(|f| f.get0::<i32>().map_err(|e| Error::Wasm(e)))?;
+            .and_then(|f| f.get0::<i32>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_heap_ptr_set = instance
             .0
             .get_export("opa_heap_ptr_set")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_heap_ptr_set"))
-            .and_then(|f| f.get1::<i32, ()>().map_err(|e| Error::Wasm(e)))?;
+            .and_then(|f| f.get1::<i32, ()>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_heap_top_get = instance
             .0
             .get_export("opa_heap_top_get")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_heap_top_get"))
-            .and_then(|f| f.get0::<i32>().map_err(|e| Error::Wasm(e)))?;
+            .and_then(|f| f.get0::<i32>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_heap_top_set = instance
             .0
             .get_export("opa_heap_top_set")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_heap_top_set"))
-            .and_then(|f| f.get1::<i32, ()>().map_err(|e| Error::Wasm(e)))?;
+            .and_then(|f| f.get1::<i32, ()>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_eval_ctx_new = instance
             .0
             .get_export("opa_eval_ctx_new")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_eval_ctx_new"))
-            .and_then(|f| f.get0::<i32>().map_err(|e| Error::Wasm(e)))?;
+            .and_then(|f| f.get0::<i32>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_eval_ctx_set_input = instance
             .0
             .get_export("opa_eval_ctx_set_input")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_eval_ctx_set_input"))
-            .and_then(|f| f.get2::<i32, i32, ()>().map_err(|e| Error::Wasm(e)))?;
+            .and_then(|f| f.get2::<i32, i32, ()>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_eval_ctx_set_data = instance
             .0
             .get_export("opa_eval_ctx_set_data")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_eval_ctx_set_data"))
-            .and_then(|f| f.get2::<i32, i32, ()>().map_err(|e| Error::Wasm(e)))?;
+            .and_then(|f| f.get2::<i32, i32, ()>().map_err(|e| Error::Wasmtime(e)))?;
 
         let opa_eval_ctx_get_result = instance
             .0
             .get_export("opa_eval_ctx_get_result")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("opa_eval_ctx_get_result"))
-            .and_then(|f| f.get1::<i32, i32>().map_err(|e| Error::Wasm(e)))?;
+            .and_then(|f| f.get1::<i32, i32>().map_err(|e| Error::Wasmtime(e)))?;
 
         let builtins = instance
             .0
             .get_export("builtins")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("builtins"))
-            .and_then(|f| f.get0::<i32>().map_err(|e| Error::Wasm(e)))?;
+            .and_then(|f| f.get0::<i32>().map_err(|e| Error::Wasmtime(e)))?;
 
         let eval = instance
             .0
             .get_export("eval")
             .and_then(|ext| ext.func())
             .ok_or_else(|| Error::MissingExport("eval"))
-            .and_then(|f| f.get1::<i32, i32>().map_err(|e| Error::Wasm(e)))?;
+            .and_then(|f| f.get1::<i32, i32>().map_err(|e| Error::Wasmtime(e)))?;
 
         let inner = FunctionsImpl {
             instance,
@@ -293,3 +294,8 @@ impl FunctionsImpl {
     }
 }
 
+impl fmt::Debug for FunctionsImpl {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "FunctionsImpl")
+    }
+}
