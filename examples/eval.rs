@@ -1,7 +1,7 @@
 use std::{fs, io};
 
 use clap::{App, Arg};
-use policy::Policy;
+use policy::{Policy, Value};
 use tracing::Level;
 use tracing_subscriber::{fmt, EnvFilter};
 
@@ -45,10 +45,11 @@ fn main() -> Result<(), anyhow::Error> {
 
     let policy_path = matches.value_of("policy").expect("required policy");
     let query = matches.value_of("query").expect("required query");
-    let input = matches
+    let input_str = matches
         .value_of_os("input")
         .map(fs::read_to_string)
         .unwrap_or_else(|| Ok("{}".to_string()))?;
+    let input = serde_json::from_str::<Value>(&input_str)?;
 
     let mut policy = Policy::from_rego(&policy_path, query)?;
     let result = policy.evaluate(&input)?;
