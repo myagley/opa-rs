@@ -13,6 +13,8 @@ use crate::builtins::Builtins;
 use crate::error::Error;
 use crate::ValueAddr;
 
+use super::Functions;
+
 const ABORT_FUNC_INDEX: usize = 1;
 const BUILTIN0_FUNC_INDEX: usize = 2;
 const BUILTIN1_FUNC_INDEX: usize = 3;
@@ -236,14 +238,16 @@ impl Externals for HostExternals {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Instance {
-    instance: wasmi::ModuleRef,
+    memory: Memory,
+    functions: Functions,
     externals: HostExternals,
 }
 
 impl Instance {
-    pub fn new(module: &Module, memory: &Memory, builtins: &Builtins) -> Result<Self, Error> {
+    pub fn new(module: &Module, memory: Memory) -> Result<Self, Error> {
+        let builtins = Builtins::default();
         let externals = HostExternals {
             memory: memory.clone(),
             builtins: builtins.clone(),
@@ -252,11 +256,24 @@ impl Instance {
         let instance = wasmi::ModuleInstance::new(&module.0, &imports)
             .map_err(Error::Wasmi)?
             .assert_no_start();
+        let fimpl = FunctionsImpl::new(instance, externals.clone())?;
+        let functions = Functions::from_impl(fimpl)?;
         let instance = Instance {
-            instance,
+            memory,
+            functions,
             externals,
         };
+        builtins.replace(instance.clone())?;
+
         Ok(instance)
+    }
+
+    pub fn functions(&self) -> &Functions {
+        &self.functions
+    }
+
+    pub fn memory(&self) -> &Memory {
+        &self.memory
     }
 }
 
@@ -295,18 +312,24 @@ impl Module {
 }
 
 #[derive(Debug)]
-pub struct FunctionsImpl(Instance);
+pub struct FunctionsImpl {
+    module_ref: wasmi::ModuleRef,
+    externals: HostExternals,
+}
 
 impl FunctionsImpl {
-    pub fn from_instance(instance: Instance) -> Result<Self, Error> {
-        Ok(FunctionsImpl(instance))
+    fn new(module_ref: wasmi::ModuleRef, externals: HostExternals) -> Result<Self, Error> {
+        let f = FunctionsImpl {
+            module_ref,
+            externals,
+        };
+        Ok(f)
     }
 
     pub fn builtins(&self) -> Result<i32, Error> {
         let args = [];
-        let mut externals = self.0.externals.clone();
-        self.0
-            .instance
+        let mut externals = self.externals.clone();
+        self.module_ref
             .invoke_export("builtins", &args[..], &mut externals)
             .map(|v| v.and_then(|r| r.try_into::<i32>()))
             .map_err(Error::Wasmi)
@@ -316,9 +339,8 @@ impl FunctionsImpl {
 
     pub fn opa_eval_ctx_new(&self) -> Result<i32, Error> {
         let args = [];
-        let mut externals = self.0.externals.clone();
-        self.0
-            .instance
+        let mut externals = self.externals.clone();
+        self.module_ref
             .invoke_export("opa_eval_ctx_new", &args[..], &mut externals)
             .map(|v| v.and_then(|r| r.try_into::<i32>()))
             .map_err(Error::Wasmi)
@@ -328,9 +350,8 @@ impl FunctionsImpl {
 
     pub fn opa_eval_ctx_set_input(&self, ctx: i32, input: i32) -> Result<(), Error> {
         let args = [RuntimeValue::I32(ctx), RuntimeValue::I32(input)];
-        let mut externals = self.0.externals.clone();
-        self.0
-            .instance
+        let mut externals = self.externals.clone();
+        self.module_ref
             .invoke_export("opa_eval_ctx_set_input", &args[..], &mut externals)
             .map(drop)
             .map_err(Error::Wasmi)
@@ -338,9 +359,8 @@ impl FunctionsImpl {
 
     pub fn opa_eval_ctx_set_data(&self, ctx: i32, data: i32) -> Result<(), Error> {
         let args = [RuntimeValue::I32(ctx), RuntimeValue::I32(data)];
-        let mut externals = self.0.externals.clone();
-        self.0
-            .instance
+        let mut externals = self.externals.clone();
+        self.module_ref
             .invoke_export("opa_eval_ctx_set_data", &args[..], &mut externals)
             .map(drop)
             .map_err(Error::Wasmi)
@@ -348,9 +368,8 @@ impl FunctionsImpl {
 
     pub fn eval(&self, ctx: i32) -> Result<(), Error> {
         let args = [RuntimeValue::I32(ctx)];
-        let mut externals = self.0.externals.clone();
-        self.0
-            .instance
+        let mut externals = self.externals.clone();
+        self.module_ref
             .invoke_export("eval", &args[..], &mut externals)
             .map(drop)
             .map_err(Error::Wasmi)
@@ -358,9 +377,8 @@ impl FunctionsImpl {
 
     pub fn opa_eval_ctx_get_result(&self, ctx: i32) -> Result<i32, Error> {
         let args = [RuntimeValue::I32(ctx)];
-        let mut externals = self.0.externals.clone();
-        self.0
-            .instance
+        let mut externals = self.externals.clone();
+        self.module_ref
             .invoke_export("opa_eval_ctx_get_result", &args[..], &mut externals)
             .map(|v| v.and_then(|r| r.try_into::<i32>()))
             .map_err(Error::Wasmi)
@@ -370,9 +388,8 @@ impl FunctionsImpl {
 
     pub fn opa_heap_ptr_get(&self) -> Result<i32, Error> {
         let args = [];
-        let mut externals = self.0.externals.clone();
-        self.0
-            .instance
+        let mut externals = self.externals.clone();
+        self.module_ref
             .invoke_export("opa_heap_ptr_get", &args[..], &mut externals)
             .map(|v| v.and_then(|r| r.try_into::<i32>()))
             .map_err(Error::Wasmi)
@@ -382,9 +399,8 @@ impl FunctionsImpl {
 
     pub fn opa_heap_ptr_set(&self, addr: i32) -> Result<(), Error> {
         let args = [RuntimeValue::I32(addr)];
-        let mut externals = self.0.externals.clone();
-        self.0
-            .instance
+        let mut externals = self.externals.clone();
+        self.module_ref
             .invoke_export("opa_heap_ptr_set", &args[..], &mut externals)
             .map(drop)
             .map_err(Error::Wasmi)
@@ -392,9 +408,8 @@ impl FunctionsImpl {
 
     pub fn opa_heap_top_get(&self) -> Result<i32, Error> {
         let args = [];
-        let mut externals = self.0.externals.clone();
-        self.0
-            .instance
+        let mut externals = self.externals.clone();
+        self.module_ref
             .invoke_export("opa_heap_top_get", &args[..], &mut externals)
             .map(|v| v.and_then(|r| r.try_into::<i32>()))
             .map_err(Error::Wasmi)
@@ -404,9 +419,8 @@ impl FunctionsImpl {
 
     pub fn opa_heap_top_set(&self, addr: i32) -> Result<(), Error> {
         let args = [RuntimeValue::I32(addr)];
-        let mut externals = self.0.externals.clone();
-        self.0
-            .instance
+        let mut externals = self.externals.clone();
+        self.module_ref
             .invoke_export("opa_heap_top_set", &args[..], &mut externals)
             .map(drop)
             .map_err(Error::Wasmi)
@@ -414,9 +428,8 @@ impl FunctionsImpl {
 
     pub fn opa_malloc(&self, len: i32) -> Result<i32, Error> {
         let args = [RuntimeValue::I32(len)];
-        let mut externals = self.0.externals.clone();
-        self.0
-            .instance
+        let mut externals = self.externals.clone();
+        self.module_ref
             .invoke_export("opa_malloc", &args[..], &mut externals)
             .map(|v| v.and_then(|r| r.try_into::<i32>()))
             .map_err(Error::Wasmi)
@@ -426,9 +439,8 @@ impl FunctionsImpl {
 
     pub fn opa_json_parse(&self, addr: i32, len: i32) -> Result<i32, Error> {
         let args = [RuntimeValue::I32(addr), RuntimeValue::I32(len)];
-        let mut externals = self.0.externals.clone();
-        self.0
-            .instance
+        let mut externals = self.externals.clone();
+        self.module_ref
             .invoke_export("opa_json_parse", &args[..], &mut externals)
             .map(|v| v.and_then(|r| r.try_into::<i32>()))
             .map_err(Error::Wasmi)
@@ -438,9 +450,8 @@ impl FunctionsImpl {
 
     pub fn opa_json_dump(&self, addr: i32) -> Result<i32, Error> {
         let args = [RuntimeValue::I32(addr)];
-        let mut externals = self.0.externals.clone();
-        self.0
-            .instance
+        let mut externals = self.externals.clone();
+        self.module_ref
             .invoke_export("opa_json_dump", &args[..], &mut externals)
             .map(|v| v.and_then(|r| r.try_into::<i32>()))
             .map_err(Error::Wasmi)
