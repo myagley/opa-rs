@@ -3,6 +3,8 @@ use std::{fmt, io};
 
 use serde::{de, ser};
 use thiserror::Error;
+
+#[cfg(target_arch = "x86_64")]
 use wasmtime::Trap;
 
 use crate::{Value, ValueAddr};
@@ -11,10 +13,15 @@ use crate::{Value, ValueAddr};
 pub enum Error {
     #[error("Policy is not initialized properly. This is a bug.")]
     Initialization,
-    #[error("An occurred from wasmtime")]
-    Wasm(#[source] anyhow::Error),
+    #[cfg(target_arch = "x86_64")]
+    #[error("An occurred from wasmtime.")]
+    Wasmtime(#[source] anyhow::Error),
+    #[cfg(not(target_arch = "x86_64"))]
+    #[error("An occurred from wasmi.")]
+    Wasmi(#[source] wasmi::Error),
     #[error("Expected exported function {0}")]
     MissingExport(&'static str),
+    #[cfg(target_arch = "x86_64")]
     #[error("A wasm function call trapped.")]
     Trap(
         #[source]
@@ -59,6 +66,8 @@ pub enum Error {
     InvalidIpNetwork(#[source] ipnetwork::IpNetworkError),
     #[error("Invalid regex.")]
     InvalidRegex(#[source] regex::Error),
+    #[error("Invalid function return. Expected {0}")]
+    InvalidResult(&'static str),
 }
 
 impl de::Error for Error {

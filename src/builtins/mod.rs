@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use lazy_static::lazy_static;
 use tracing::{debug, error};
-use wasmtime::Memory;
 
+use crate::wasm::Memory;
 use crate::{dump_json, load_json, Error, Functions, Value, ValueAddr};
 
 mod aggregates;
@@ -119,7 +119,7 @@ lazy_static! {
     };
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Builtins {
     inner: Arc<RefCell<Option<Inner>>>,
 }
@@ -177,6 +177,7 @@ impl Builtins {
     }
 }
 
+#[derive(Debug)]
 struct Inner {
     functions: Functions,
     memory: Memory,

@@ -2,15 +2,16 @@ use std::path::Path;
 use std::{fmt, process};
 
 use tempfile::TempDir;
-use wasmtime::*;
 
 mod builtins;
 mod error;
 mod functions;
 mod value;
+mod wasm;
 
 use builtins::Builtins;
 use functions::Functions;
+use wasm::{Instance, Memory, Module};
 
 pub use error::Error;
 pub use value::{Number, Value};
@@ -65,14 +66,12 @@ impl Policy {
             ));
         }
 
-        let store = Store::default();
-        let module = Module::from_file(&store, &wasm).map_err(Error::Wasm)?;
+        let module = Module::from_file(&wasm)?;
         Self::from_wasm(&module)
     }
 
     pub fn from_wasm(module: &Module) -> Result<Self, Error> {
-        let memorytype = MemoryType::new(Limits::new(5, None));
-        let memory = Memory::new(module.store(), memorytype);
+        let memory = Memory::from_module(module);
 
         // Builtins are tricky to handle.
         // We need to setup the functions as imports before creating
@@ -88,53 +87,14 @@ impl Policy {
         // as well as mutate the contents, requiring a RefCell.
         let builtins = Builtins::default();
 
-        let b0 = builtins.clone();
-        let b1 = builtins.clone();
-        let b2 = builtins.clone();
-        let b3 = builtins.clone();
-        let b4 = builtins.clone();
-
-        let imports = [
-            Extern::Memory(memory.clone()),
-            Extern::Func(Func::wrap1(module.store(), abort)),
-            Extern::Func(Func::wrap2(module.store(), move |id, ctx| {
-                i32::from(b0.builtin0(id, ValueAddr(ctx)))
-            })),
-            Extern::Func(Func::wrap3(module.store(), move |id, ctx, a| {
-                i32::from(b1.builtin1(id, ValueAddr(ctx), ValueAddr(a)))
-            })),
-            Extern::Func(Func::wrap4(module.store(), move |id, ctx, a, b| {
-                i32::from(b2.builtin2(id, ValueAddr(ctx), ValueAddr(a), ValueAddr(b)))
-            })),
-            Extern::Func(Func::wrap5(module.store(), move |id, ctx, a, b, c| {
-                i32::from(b3.builtin3(id, ValueAddr(ctx), ValueAddr(a), ValueAddr(b), ValueAddr(c)))
-            })),
-            Extern::Func(Func::wrap6(module.store(), move |id, ctx, a, b, c, d| {
-                i32::from(b4.builtin4(
-                    id,
-                    ValueAddr(ctx),
-                    ValueAddr(a),
-                    ValueAddr(b),
-                    ValueAddr(c),
-                    ValueAddr(d),
-                ))
-            })),
-        ];
-
-        let instance = Instance::new(module, &imports).map_err(|e| Error::Wasm(e))?;
-        let functions = Functions::from_instance(instance.clone())?;
+        let instance = Instance::new(module, &memory, &builtins)?;
+        let functions = Functions::from_instance(instance)?;
         builtins.replace(functions.clone(), memory.clone())?;
 
         // Load the data
         let data = "{}";
         let data_addr = functions.malloc(data.as_bytes().len())?;
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                data.as_ptr(),
-                memory.data_ptr().offset(data_addr.0 as isize),
-                data.as_bytes().len(),
-            );
-        }
+        memory.set(data_addr, data.as_bytes())?;
 
         let data_addr = functions.json_parse(data_addr, data.as_bytes().len())?;
         let base_heap_ptr = functions.heap_ptr_get()?;
@@ -209,12 +169,10 @@ pub(crate) fn dump_json(
     addr: ValueAddr,
 ) -> Result<String, Error> {
     let raw_addr = functions.json_dump(addr)?;
-    let s = unsafe {
-        let p = memory.data_ptr().offset(raw_addr.0 as isize);
-        let cstr = std::ffi::CStr::from_ptr(p as *const i8);
-        let s = cstr.to_str().map_err(Error::CStr)?;
-        s.to_string()
-    };
+    let s = memory
+        .cstring_at(raw_addr)?
+        .into_string()
+        .map_err(|e| Error::CStr(e.utf8_error()))?;
     Ok(s)
 }
 
@@ -224,13 +182,7 @@ pub(crate) fn load_json(
     value: &str,
 ) -> Result<ValueAddr, Error> {
     let raw_addr = functions.malloc(value.as_bytes().len())?;
-    unsafe {
-        std::ptr::copy_nonoverlapping(
-            value.as_ptr(),
-            memory.data_ptr().offset(raw_addr.0 as isize),
-            value.as_bytes().len(),
-        );
-    }
+    memory.set(raw_addr, value.as_bytes())?;
     let parsed_addr = functions.json_parse(raw_addr, value.as_bytes().len())?;
     Ok(parsed_addr)
 }
