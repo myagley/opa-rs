@@ -1,12 +1,13 @@
 use std::path::Path;
 use std::{fmt, process};
 
+use serde::Serialize;
 use tempfile::TempDir;
 
 mod builtins;
 mod error;
 mod functions;
-mod value;
+pub mod value;
 mod wasm;
 
 use builtins::Builtins;
@@ -117,13 +118,14 @@ impl Policy {
 
     // This takes a &mut self because calling it potentially mutates the
     // memory. We could make this take &self, if we add a mutex.
-    pub fn evaluate(&mut self, input: &str) -> Result<Value, Error> {
+    pub fn evaluate<T: Serialize>(&mut self, input: &T) -> Result<Value, Error> {
         // Reset the heap pointers
         self.functions.heap_ptr_set(self.data_heap_ptr)?;
         self.functions.heap_top_set(self.data_heap_top)?;
 
         // Load input data
-        let input_addr = self.load_json(input)?;
+        let serialized = serde_json::to_string(input).map_err(Error::SerializeJson)?;
+        let input_addr = self.load_json(&serialized)?;
 
         // setup the context
         let ctx_addr = self.functions.eval_ctx_new()?;
