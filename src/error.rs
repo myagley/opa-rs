@@ -7,7 +7,7 @@ use thiserror::Error;
 #[cfg(target_arch = "x86_64")]
 use wasmtime::Trap;
 
-use crate::{Value, ValueAddr};
+use crate::{opa, Value, ValueAddr};
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -68,6 +68,8 @@ pub enum Error {
     InvalidRegex(#[source] regex::Error),
     #[error("Invalid function return. Expected {0}")]
     InvalidResult(&'static str),
+    #[error("Failed to serialize value to instance.")]
+    InstanceSerde(#[source] opa::Error),
 }
 
 impl de::Error for Error {
@@ -79,5 +81,11 @@ impl de::Error for Error {
 impl ser::Error for Error {
     fn custom<T: fmt::Display>(msg: T) -> Error {
         Error::SerializeValue(msg.to_string())
+    }
+}
+
+impl From<opa::Error> for Error {
+    fn from(error: opa::Error) -> Error {
+        Error::InstanceSerde(error)
     }
 }

@@ -1,17 +1,20 @@
+use std::mem;
+
 use serde::{ser, Serialize};
 
 use crate::opa::{Error, Result};
 use crate::wasm::Instance;
+use crate::ValueAddr;
 
-pub fn to_instance<T>(instance: Instance, value: &T) -> Result<()>
+use super::*;
+
+pub fn to_instance<T>(instance: Instance, value: &T) -> Result<ValueAddr>
 where
     T: ?Sized + ser::Serialize,
 {
-    let mut serializer = Serializer {
-        instance,
-    };
-    value.serialize(&mut serializer)?;
-    Ok(())
+    let mut serializer = Serializer { instance };
+    let addr = value.serialize(&mut serializer)?;
+    Ok(addr)
 }
 
 pub struct Serializer {
@@ -19,7 +22,7 @@ pub struct Serializer {
 }
 
 impl<'a> ser::Serializer for &'a mut Serializer {
-    type Ok = ();
+    type Ok = ValueAddr;
     type Error = Error;
 
     type SerializeSeq = Self;
@@ -30,59 +33,111 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     type SerializeStruct = Self;
     type SerializeStructVariant = Self;
 
-    fn serialize_bool(self, v: bool) -> Result<()> {
-        unimplemented!();
+    fn serialize_bool(self, v: bool) -> Result<ValueAddr> {
+        let len = mem::size_of::<opa_boolean_t>();
+        let addr = self
+            .instance
+            .functions()
+            .malloc(len)
+            .map_err(|_| Error::Alloc)?;
+        self.instance
+            .memory()
+            .set(addr, opa_boolean_t::new(v).as_bytes())
+            .map_err(|_| Error::MemSet)?;
+        Ok(addr)
     }
 
-    fn serialize_i8(self, v: i8) -> Result<()> {
+    fn serialize_i8(self, v: i8) -> Result<ValueAddr> {
         self.serialize_i64(i64::from(v))
     }
 
-    fn serialize_i16(self, v: i16) -> Result<()> {
+    fn serialize_i16(self, v: i16) -> Result<ValueAddr> {
         self.serialize_i64(i64::from(v))
     }
 
-    fn serialize_i32(self, v: i32) -> Result<()> {
+    fn serialize_i32(self, v: i32) -> Result<ValueAddr> {
         self.serialize_i64(i64::from(v))
     }
 
-    fn serialize_i64(self, v: i64) -> Result<()> {
-        todo!();
+    fn serialize_i64(self, v: i64) -> Result<ValueAddr> {
+        let len = mem::size_of::<opa_number_t>();
+        let addr = self
+            .instance
+            .functions()
+            .malloc(len)
+            .map_err(|_| Error::Alloc)?;
+        self.instance
+            .memory()
+            .set(addr, opa_number_t::from_i64(v).as_bytes())
+            .map_err(|_| Error::MemSet)?;
+        Ok(addr)
     }
 
-    fn serialize_u8(self, v: u8) -> Result<()> {
+    fn serialize_u8(self, v: u8) -> Result<ValueAddr> {
         self.serialize_u64(u64::from(v))
     }
 
-    fn serialize_u16(self, v: u16) -> Result<()> {
+    fn serialize_u16(self, v: u16) -> Result<ValueAddr> {
         self.serialize_u64(u64::from(v))
     }
 
-    fn serialize_u32(self, v: u32) -> Result<()> {
+    fn serialize_u32(self, v: u32) -> Result<ValueAddr> {
         self.serialize_u64(u64::from(v))
     }
 
-    fn serialize_u64(self, v: u64) -> Result<()> {
-        todo!()
+    fn serialize_u64(self, v: u64) -> Result<ValueAddr> {
+        self.serialize_i64(v as i64)
     }
 
-    fn serialize_f32(self, v: f32) -> Result<()> {
+    fn serialize_f32(self, v: f32) -> Result<ValueAddr> {
         self.serialize_f64(f64::from(v))
     }
 
-    fn serialize_f64(self, v: f64) -> Result<()> {
-        todo!()
+    fn serialize_f64(self, v: f64) -> Result<ValueAddr> {
+        let len = mem::size_of::<opa_number_t>();
+        let addr = self
+            .instance
+            .functions()
+            .malloc(len)
+            .map_err(|_| Error::Alloc)?;
+        self.instance
+            .memory()
+            .set(addr, opa_number_t::from_f64(v).as_bytes())
+            .map_err(|_| Error::MemSet)?;
+        Ok(addr)
     }
 
-    fn serialize_char(self, v: char) -> Result<()> {
+    fn serialize_char(self, v: char) -> Result<ValueAddr> {
         self.serialize_str(&v.to_string())
     }
 
-    fn serialize_str(self, v: &str) -> Result<()> {
-        todo!()
+    fn serialize_str(self, v: &str) -> Result<ValueAddr> {
+        let struct_len = mem::size_of::<opa_string_t>();
+        let struct_addr = self
+            .instance
+            .functions()
+            .malloc(struct_len)
+            .map_err(|_| Error::Alloc)?;
+        let data_len = v.len();
+        let data_addr = self
+            .instance
+            .functions()
+            .malloc(data_len)
+            .map_err(|_| Error::Alloc)?;
+
+        let s = opa_string_t::from_str(v, data_addr);
+        self.instance
+            .memory()
+            .set(data_addr, v.as_bytes())
+            .map_err(|_| Error::MemSet)?;
+        self.instance
+            .memory()
+            .set(struct_addr, s.as_bytes())
+            .map_err(|_| Error::MemSet)?;
+        Ok(struct_addr)
     }
 
-    fn serialize_bytes(self, v: &[u8]) -> Result<()> {
+    fn serialize_bytes(self, v: &[u8]) -> Result<ValueAddr> {
         use serde::ser::SerializeSeq;
         let mut seq = self.serialize_seq(Some(v.len()))?;
         for byte in v {
@@ -91,22 +146,32 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         seq.end()
     }
 
-    fn serialize_none(self) -> Result<()> {
+    fn serialize_none(self) -> Result<ValueAddr> {
         self.serialize_unit()
     }
 
-    fn serialize_some<T>(self, value: &T) -> Result<()>
+    fn serialize_some<T>(self, value: &T) -> Result<ValueAddr>
     where
         T: ?Sized + Serialize,
     {
         value.serialize(self)
     }
 
-    fn serialize_unit(self) -> Result<()> {
-        todo!()
+    fn serialize_unit(self) -> Result<ValueAddr> {
+        let len = mem::size_of::<opa_value>();
+        let addr = self
+            .instance
+            .functions()
+            .malloc(len)
+            .map_err(|_| Error::Alloc)?;
+        self.instance
+            .memory()
+            .set(addr, NULL.as_bytes())
+            .map_err(|_| Error::MemSet)?;
+        Ok(addr)
     }
 
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<()> {
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<ValueAddr> {
         self.serialize_unit()
     }
 
@@ -115,15 +180,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         _name: &'static str,
         _variant_index: u32,
         variant: &'static str,
-    ) -> Result<()> {
-        todo!()
+    ) -> Result<ValueAddr> {
+        variant.serialize(self)
     }
 
-    fn serialize_newtype_struct<T>(
-        self,
-        _name: &'static str,
-        value: &T,
-    ) -> Result<()>
+    fn serialize_newtype_struct<T>(self, _name: &'static str, value: &T) -> Result<ValueAddr>
     where
         T: ?Sized + Serialize,
     {
@@ -136,7 +197,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         _variant_index: u32,
         variant: &'static str,
         value: &T,
-    ) -> Result<()>
+    ) -> Result<ValueAddr>
     where
         T: ?Sized + Serialize,
     {
@@ -183,11 +244,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         todo!()
     }
 
-    fn serialize_struct(
-        self,
-        _name: &'static str,
-        len: usize,
-    ) -> Result<Self::SerializeStruct> {
+    fn serialize_struct(self, _name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
         self.serialize_map(Some(len))
     }
 
@@ -215,7 +272,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 // is called on the Serializer.
 impl<'a> ser::SerializeSeq for &'a mut Serializer {
     // Must match the `Ok` type of the serializer.
-    type Ok = ();
+    type Ok = ValueAddr;
     // Must match the `Error` type of the serializer.
     type Error = Error;
 
@@ -224,46 +281,52 @@ impl<'a> ser::SerializeSeq for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        value.serialize(&mut **self)
+        // value.serialize(&mut **self)?;
+        // Ok(())
+        todo!()
     }
 
     // Close the sequence.
-    fn end(self) -> Result<()> {
-        Ok(())
+    fn end(self) -> Result<ValueAddr> {
+        todo!()
     }
 }
 
 // Same thing but for tuples.
 impl<'a> ser::SerializeTuple for &'a mut Serializer {
-    type Ok = ();
+    type Ok = ValueAddr;
     type Error = Error;
 
     fn serialize_element<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
-        value.serialize(&mut **self)
+        // value.serialize(&mut **self)
+        todo!()
     }
 
-    fn end(self) -> Result<()> {
-        Ok(())
+    fn end(self) -> Result<ValueAddr> {
+        // Ok(())
+        todo!()
     }
 }
 
 // Same thing but for tuple structs
 impl<'a> ser::SerializeTupleStruct for &'a mut Serializer {
-    type Ok = ();
+    type Ok = ValueAddr;
     type Error = Error;
 
     fn serialize_field<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
-        value.serialize(&mut **self)
+        // value.serialize(&mut **self)
+        todo!()
     }
 
-    fn end(self) -> Result<()> {
-        Ok(())
+    fn end(self) -> Result<ValueAddr> {
+        // Ok(())
+        todo!()
     }
 }
 
@@ -277,7 +340,7 @@ impl<'a> ser::SerializeTupleStruct for &'a mut Serializer {
 // So the `end` method in this impl is responsible for closing both the `]` and
 // the `}`.
 impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
-    type Ok = ();
+    type Ok = ValueAddr;
     type Error = Error;
 
     fn serialize_field<T>(&mut self, value: &T) -> Result<()>
@@ -287,11 +350,13 @@ impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
         // if !self.output.ends_with('[') {
         //     self.output += ",";
         // }
-        value.serialize(&mut **self)
+        // value.serialize(&mut **self)
+        todo!()
     }
 
-    fn end(self) -> Result<()> {
-        Ok(())
+    fn end(self) -> Result<ValueAddr> {
+        // Ok(())
+        todo!()
     }
 }
 
@@ -304,7 +369,7 @@ impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
 // key and value are both available simultaneously. In JSON it doesn't make a
 // difference so the default behavior for `serialize_entry` is fine.
 impl<'a> ser::SerializeMap for &'a mut Serializer {
-    type Ok = ();
+    type Ok = ValueAddr;
     type Error = Error;
 
     // The Serde data model allows map keys to be any serializable type. JSON
@@ -322,7 +387,8 @@ impl<'a> ser::SerializeMap for &'a mut Serializer {
         // if !self.output.ends_with('{') {
         //     self.output += ",";
         // }
-        key.serialize(&mut **self)
+        // key.serialize(&mut **self)
+        todo!()
     }
 
     // It doesn't make a difference whether the colon is printed at the end of
@@ -333,19 +399,21 @@ impl<'a> ser::SerializeMap for &'a mut Serializer {
         T: ?Sized + Serialize,
     {
         // self.output += ":";
-        value.serialize(&mut **self)
+        //value.serialize(&mut **self)
+        todo!()
     }
 
-    fn end(self) -> Result<()> {
+    fn end(self) -> Result<ValueAddr> {
         // self.output += "}";
-        Ok(())
+        // Ok(())
+        todo!()
     }
 }
 
 // Structs are like maps in which the keys are constrained to be compile-time
 // constant strings.
 impl<'a> ser::SerializeStruct for &'a mut Serializer {
-    type Ok = ();
+    type Ok = ValueAddr;
     type Error = Error;
 
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
@@ -355,21 +423,23 @@ impl<'a> ser::SerializeStruct for &'a mut Serializer {
         // if !self.output.ends_with('{') {
         //     self.output += ",";
         // }
-        key.serialize(&mut **self)?;
-        // self.output += ":";
-        value.serialize(&mut **self)
+        // key.serialize(&mut **self)?;
+        // // self.output += ":";
+        // value.serialize(&mut **self)
+        todo!()
     }
 
-    fn end(self) -> Result<()> {
+    fn end(self) -> Result<ValueAddr> {
         // self.output += "}";
-        Ok(())
+        // Ok(())
+        todo!()
     }
 }
 
 // Similar to `SerializeTupleVariant`, here the `end` method is responsible for
 // closing both of the curly braces opened by `serialize_struct_variant`.
 impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
-    type Ok = ();
+    type Ok = ValueAddr;
     type Error = Error;
 
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
@@ -379,13 +449,73 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
         // if !self.output.ends_with('{') {
         //     self.output += ",";
         // }
-        key.serialize(&mut **self)?;
-        // self.output += ":";
-        value.serialize(&mut **self)
+        // key.serialize(&mut **self)?;
+        // // self.output += ":";
+        // value.serialize(&mut **self)
+        todo!()
     }
 
-    fn end(self) -> Result<()> {
+    fn end(self) -> Result<ValueAddr> {
         // self.output += "}}";
-        Ok(())
+        // Ok(())
+        todo!()
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use serde::{Deserialize, Serialize};
+
+    use crate::dump_json;
+    use crate::opa::to_instance;
+    use crate::wasm::{Instance, Memory, Module};
+
+    #[derive(Debug, Serialize, Deserialize)]
+    enum TestEnum {
+        Unit,
+    }
+
+    thread_local! {
+        static EMPTY_MODULE: Module = {
+            let bytes = fs::read("tests/empty.wasm").unwrap();
+            let module = Module::from_bytes(bytes).unwrap();
+            module
+        };
+    }
+
+    macro_rules! type_roundtrip {
+        ($name:ident, $input:expr, $expected:expr) => {
+            #[test]
+            fn $name() {
+                EMPTY_MODULE.with(|module| {
+                    let memory = Memory::from_module(module);
+                    let instance = Instance::new(module, memory).unwrap();
+                    let addr = to_instance(instance.clone(), &$input).unwrap();
+                    let loaded = dump_json(&instance, addr).unwrap();
+                    assert_eq!($expected, loaded);
+                })
+            }
+        };
+    }
+
+    type_roundtrip!(test_serialize_bool, true, "true");
+    type_roundtrip!(test_serialize_i8, 42_i8, "42");
+    type_roundtrip!(test_serialize_i16, 42_i16, "42");
+    type_roundtrip!(test_serialize_i32, 42_i32, "42");
+    type_roundtrip!(test_serialize_i64, 42_i64, "42");
+    type_roundtrip!(test_serialize_u8, 42_u8, "42");
+    type_roundtrip!(test_serialize_u16, 42_u16, "42");
+    type_roundtrip!(test_serialize_u32, 42_u32, "42");
+    type_roundtrip!(test_serialize_u64, 42_u64, "42");
+
+    type_roundtrip!(test_serialize_f32, 1.234_f32, "1.23400");
+    type_roundtrip!(test_serialize_f64, 1.234_f64, "1.23400");
+
+    type_roundtrip!(test_serialize_str, "hello there", "\"hello there\"");
+
+    type_roundtrip!(test_serialize_unit, (), "null");
+    type_roundtrip!(test_serialize_none, Option::<i8>::None, "null");
+    type_roundtrip!(test_serialize_unit_variant, TestEnum::Unit, "\"Unit\"");
 }

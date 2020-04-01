@@ -9,6 +9,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("{0}")]
     Message(String),
+    #[error("Failed to alloc memory.")]
+    Alloc,
+    #[error("Failed to set memory.")]
+    MemSet,
 }
 
 impl ser::Error for Error {

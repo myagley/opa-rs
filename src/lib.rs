@@ -141,12 +141,17 @@ impl Policy {
         Ok(s)
     }
 
-    fn load_json(&self, value: &str) -> Result<ValueAddr, Error> {
+    pub(crate) fn load_json(&self, value: &str) -> Result<ValueAddr, Error> {
         load_json(&self.instance, value)
     }
 
-    fn dump_json(&self, addr: ValueAddr) -> Result<String, Error> {
+    pub(crate) fn dump_json(&self, addr: ValueAddr) -> Result<String, Error> {
         dump_json(&self.instance, addr)
+    }
+
+    pub(crate) fn serialize_to<T: Serialize>(&self, value: T) -> Result<ValueAddr, Error> {
+        let addr = crate::opa::to_instance(self.instance.clone(), &value)?;
+        Ok(addr)
     }
 }
 

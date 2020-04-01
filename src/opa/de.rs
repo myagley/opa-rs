@@ -5,7 +5,7 @@ use crate::wasm::Instance;
 
 pub fn from_instance<T>(_instance: Instance) -> Result<T>
 where
-    T: de::DeserializeOwned
+    T: de::DeserializeOwned,
 {
     unimplemented!()
 }

@@ -137,6 +137,12 @@ impl Module {
         let module = wasmtime::Module::from_file(&store, &path).map_err(Error::Wasmtime)?;
         Ok(Module(module))
     }
+
+    pub fn from_bytes<B: AsRef<[u8]>>(bytes: B) -> Result<Module, Error> {
+        let store = Store::default();
+        let module = wasmtime::Module::new(&store, bytes).map_err(Error::Wasmtime)?;
+        Ok(Module(module))
+    }
 }
 
 #[allow(dead_code)]
