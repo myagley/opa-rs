@@ -6,6 +6,7 @@ use tempfile::TempDir;
 
 mod builtins;
 mod error;
+mod opa;
 pub mod value;
 mod wasm;
 
