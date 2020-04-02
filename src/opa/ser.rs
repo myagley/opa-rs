@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::mem;
 
 use serde::{ser, Serialize};
@@ -21,29 +23,38 @@ pub struct Serializer {
     instance: Instance,
 }
 
+impl Serializer {
+    fn alloc(&self, size: usize) -> Result<ValueAddr> {
+        self.instance
+            .functions()
+            .malloc(size)
+            .map_err(|_| Error::Alloc)
+    }
+
+    fn memset(&self, addr: ValueAddr, bytes: &[u8]) -> Result<()> {
+        self.instance
+            .memory()
+            .set(addr, bytes)
+            .map_err(|_| Error::MemSet)
+    }
+}
+
 impl<'a> ser::Serializer for &'a mut Serializer {
     type Ok = ValueAddr;
     type Error = Error;
 
-    type SerializeSeq = Self;
-    type SerializeTuple = Self;
-    type SerializeTupleStruct = Self;
-    type SerializeTupleVariant = Self;
-    type SerializeMap = Self;
-    type SerializeStruct = Self;
-    type SerializeStructVariant = Self;
+    type SerializeSeq = ArraySerializer<'a>;
+    type SerializeTuple = ArraySerializer<'a>;
+    type SerializeTupleStruct = ArraySerializer<'a>;
+    type SerializeTupleVariant = TupleVariantSerializer<'a>;
+    type SerializeMap = ObjectSerializer<'a>;
+    type SerializeStruct = ObjectSerializer<'a>;
+    type SerializeStructVariant = StructVariantSerializer<'a>;
 
     fn serialize_bool(self, v: bool) -> Result<ValueAddr> {
         let len = mem::size_of::<opa_boolean_t>();
-        let addr = self
-            .instance
-            .functions()
-            .malloc(len)
-            .map_err(|_| Error::Alloc)?;
-        self.instance
-            .memory()
-            .set(addr, opa_boolean_t::new(v).as_bytes())
-            .map_err(|_| Error::MemSet)?;
+        let addr = self.alloc(len)?;
+        self.memset(addr, opa_boolean_t::new(v).as_bytes())?;
         Ok(addr)
     }
 
@@ -61,15 +72,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_i64(self, v: i64) -> Result<ValueAddr> {
         let len = mem::size_of::<opa_number_t>();
-        let addr = self
-            .instance
-            .functions()
-            .malloc(len)
-            .map_err(|_| Error::Alloc)?;
-        self.instance
-            .memory()
-            .set(addr, opa_number_t::from_i64(v).as_bytes())
-            .map_err(|_| Error::MemSet)?;
+        let addr = self.alloc(len)?;
+        self.memset(addr, opa_number_t::from_i64(v).as_bytes())?;
         Ok(addr)
     }
 
@@ -95,15 +99,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_f64(self, v: f64) -> Result<ValueAddr> {
         let len = mem::size_of::<opa_number_t>();
-        let addr = self
-            .instance
-            .functions()
-            .malloc(len)
-            .map_err(|_| Error::Alloc)?;
-        self.instance
-            .memory()
-            .set(addr, opa_number_t::from_f64(v).as_bytes())
-            .map_err(|_| Error::MemSet)?;
+        let addr = self.alloc(len)?;
+        self.memset(addr, opa_number_t::from_f64(v).as_bytes())?;
         Ok(addr)
     }
 
@@ -113,27 +110,13 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_str(self, v: &str) -> Result<ValueAddr> {
         let struct_len = mem::size_of::<opa_string_t>();
-        let struct_addr = self
-            .instance
-            .functions()
-            .malloc(struct_len)
-            .map_err(|_| Error::Alloc)?;
+        let struct_addr = self.alloc(struct_len)?;
         let data_len = v.len();
-        let data_addr = self
-            .instance
-            .functions()
-            .malloc(data_len)
-            .map_err(|_| Error::Alloc)?;
+        let data_addr = self.alloc(data_len)?;
 
         let s = opa_string_t::from_str(v, data_addr);
-        self.instance
-            .memory()
-            .set(data_addr, v.as_bytes())
-            .map_err(|_| Error::MemSet)?;
-        self.instance
-            .memory()
-            .set(struct_addr, s.as_bytes())
-            .map_err(|_| Error::MemSet)?;
+        self.memset(data_addr, v.as_bytes())?;
+        self.memset(struct_addr, s.as_bytes())?;
         Ok(struct_addr)
     }
 
@@ -159,15 +142,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_unit(self) -> Result<ValueAddr> {
         let len = mem::size_of::<opa_value>();
-        let addr = self
-            .instance
-            .functions()
-            .malloc(len)
-            .map_err(|_| Error::Alloc)?;
-        self.instance
-            .memory()
-            .set(addr, NULL.as_bytes())
-            .map_err(|_| Error::MemSet)?;
+        let addr = self.alloc(len)?;
+        self.memset(addr, NULL.as_bytes())?;
         Ok(addr)
     }
 
@@ -201,17 +177,41 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        // self.output += "{";
-        // variant.serialize(&mut *self)?;
-        // self.output += ":";
-        // value.serialize(&mut *self)?;
-        // self.output += "}";
-        // Ok(())
-        todo!()
+        use serde::ser::SerializeMap;
+        let mut mapser = self.serialize_map(Some(1))?;
+        mapser.serialize_entry(variant, value)?;
+        let addr = mapser.end()?;
+        Ok(addr)
     }
 
-    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        todo!()
+    fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
+        if let Some(len) = len {
+            let struct_len = mem::size_of::<opa_array_t>();
+            let struct_addr = self.alloc(struct_len)?;
+
+            let elems_len = len * mem::size_of::<opa_array_elem_t>();
+            let elems_addr = self.alloc(elems_len)?;
+
+            let hdr = opa_value { ty: OPA_ARRAY };
+            let seq = opa_array_t {
+                hdr,
+                elems: elems_addr.0 as intptr_t,
+                len: len as size_t,
+                cap: len as size_t,
+            };
+
+            self.memset(struct_addr, seq.as_bytes())?;
+            let serializer = ArraySerializer {
+                ser: self,
+                count: 0,
+                len,
+                addr: struct_addr,
+                elems_addr,
+            };
+            Ok(serializer)
+        } else {
+            Err(Error::ExpectedSeqLen)
+        }
     }
 
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple> {
@@ -231,17 +231,59 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         _name: &'static str,
         _variant_index: u32,
         variant: &'static str,
-        _len: usize,
+        len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
-        // self.output += "{";
-        // variant.serialize(&mut *self)?;
-        // self.output += ":[";
-        // Ok(self)
-        todo!()
+        let instance = self.instance.clone();
+        let variant_addr = variant.serialize(&mut *self)?;
+        let elem = opa_object_elem_t {
+            k: variant_addr.0 as intptr_t,
+            v: 0,
+            next: 0,
+        };
+        let elem_addr = self.alloc(mem::size_of::<opa_object_elem_t>())?;
+        self.memset(elem_addr, elem.as_bytes())?;
+
+        let hdr = opa_value { ty: OPA_OBJECT };
+        let obj = opa_object_t {
+            hdr,
+            head: elem_addr.0 as intptr_t,
+        };
+
+        let obj_addr = self.alloc(mem::size_of::<opa_object_t>())?;
+        self.memset(obj_addr, obj.as_bytes())?;
+
+        let seq = self.serialize_seq(Some(len))?;
+
+        let serializer = TupleVariantSerializer {
+            instance,
+            seq,
+            addr: obj_addr,
+            elem_addr,
+        };
+        Ok(serializer)
     }
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
-        todo!()
+        let len = mem::size_of::<opa_object_t>();
+        let addr = self.alloc(len)?;
+
+        let hdr = opa_value { ty: OPA_OBJECT };
+        let obj = opa_object_t { hdr, head: 0 };
+
+        self.memset(addr, obj.as_bytes())?;
+        let elem = opa_object_elem_t {
+            k: 0,
+            v: 0,
+            next: 0,
+        };
+        let serializer = ObjectSerializer {
+            ser: self,
+            addr,
+            elem,
+            prev_elem: addr,
+            first: true,
+        };
+        Ok(serializer)
     }
 
     fn serialize_struct(self, _name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
@@ -253,47 +295,87 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         _name: &'static str,
         _variant_index: u32,
         variant: &'static str,
-        _len: usize,
+        len: usize,
     ) -> Result<Self::SerializeStructVariant> {
-        // self.output += "{";
-        // variant.serialize(&mut *self)?;
-        // self.output += ":{";
-        // Ok(self)
-        todo!()
+        let instance = self.instance.clone();
+        let variant_addr = variant.serialize(&mut *self)?;
+        let elem = opa_object_elem_t {
+            k: variant_addr.0 as intptr_t,
+            v: 0,
+            next: 0,
+        };
+        let elem_addr = self.alloc(mem::size_of::<opa_object_elem_t>())?;
+        self.memset(elem_addr, elem.as_bytes())?;
+
+        let hdr = opa_value { ty: OPA_OBJECT };
+        let obj = opa_object_t {
+            hdr,
+            head: elem_addr.0 as intptr_t,
+        };
+
+        let obj_addr = self.alloc(mem::size_of::<opa_object_t>())?;
+        self.memset(obj_addr, obj.as_bytes())?;
+
+        let obj = self.serialize_map(Some(len))?;
+
+        let serializer = StructVariantSerializer {
+            instance,
+            obj,
+            addr: obj_addr,
+            elem_addr,
+        };
+        Ok(serializer)
     }
 }
 
-// The following 7 impls deal with the serialization of compound types like
-// sequences and maps. Serialization of such types is begun by a Serializer
-// method and followed by zero or more calls to serialize individual elements of
-// the compound type and one call to end the compound type.
-//
-// This impl is SerializeSeq so these methods are called after `serialize_seq`
-// is called on the Serializer.
-impl<'a> ser::SerializeSeq for &'a mut Serializer {
-    // Must match the `Ok` type of the serializer.
+pub struct ArraySerializer<'a> {
+    ser: &'a mut Serializer,
+    count: usize,
+    len: usize,
+    addr: ValueAddr,
+    elems_addr: ValueAddr,
+}
+
+impl<'a> ser::SerializeSeq for ArraySerializer<'a> {
     type Ok = ValueAddr;
-    // Must match the `Error` type of the serializer.
+
     type Error = Error;
 
-    // Serialize a single element of the sequence.
     fn serialize_element<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
-        // value.serialize(&mut **self)?;
-        // Ok(())
-        todo!()
+        // store the index
+        let i_addr = self.count.serialize(&mut *self.ser)?;
+
+        // store the value
+        let v_addr = value.serialize(&mut *self.ser)?;
+
+        // store the elem
+        let elem = opa_array_elem_t {
+            i: i_addr.0 as intptr_t,
+            v: v_addr.0 as intptr_t,
+        };
+        self.ser.memset(
+            self.elems_addr + self.count * mem::size_of::<opa_array_elem_t>(),
+            elem.as_bytes(),
+        )?;
+
+        // bump the count for the next element
+        self.count = self.count + 1;
+        Ok(())
     }
 
-    // Close the sequence.
     fn end(self) -> Result<ValueAddr> {
-        todo!()
+        if self.count != self.len {
+            return Err(Error::InvalidSeqLen(self.len, self.count));
+        }
+        Ok(self.addr)
     }
 }
 
 // Same thing but for tuples.
-impl<'a> ser::SerializeTuple for &'a mut Serializer {
+impl<'a> ser::SerializeTuple for ArraySerializer<'a> {
     type Ok = ValueAddr;
     type Error = Error;
 
@@ -301,18 +383,16 @@ impl<'a> ser::SerializeTuple for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        // value.serialize(&mut **self)
-        todo!()
+        ser::SerializeSeq::serialize_element(self, value)
     }
 
     fn end(self) -> Result<ValueAddr> {
-        // Ok(())
-        todo!()
+        ser::SerializeSeq::end(self)
     }
 }
 
 // Same thing but for tuple structs
-impl<'a> ser::SerializeTupleStruct for &'a mut Serializer {
+impl<'a> ser::SerializeTupleStruct for ArraySerializer<'a> {
     type Ok = ValueAddr;
     type Error = Error;
 
@@ -320,14 +400,19 @@ impl<'a> ser::SerializeTupleStruct for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        // value.serialize(&mut **self)
-        todo!()
+        ser::SerializeSeq::serialize_element(self, value)
     }
 
     fn end(self) -> Result<ValueAddr> {
-        // Ok(())
-        todo!()
+        ser::SerializeSeq::end(self)
     }
+}
+
+pub struct TupleVariantSerializer<'a> {
+    instance: Instance,
+    seq: ArraySerializer<'a>,
+    addr: ValueAddr,
+    elem_addr: ValueAddr,
 }
 
 // Tuple variants are a little different. Refer back to the
@@ -339,7 +424,7 @@ impl<'a> ser::SerializeTupleStruct for &'a mut Serializer {
 //
 // So the `end` method in this impl is responsible for closing both the `]` and
 // the `}`.
-impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
+impl<'a> ser::SerializeTupleVariant for TupleVariantSerializer<'a> {
     type Ok = ValueAddr;
     type Error = Error;
 
@@ -347,17 +432,27 @@ impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        // if !self.output.ends_with('[') {
-        //     self.output += ",";
-        // }
-        // value.serialize(&mut **self)
-        todo!()
+        use serde::ser::SerializeSeq;
+        self.seq.serialize_element(value)
     }
 
     fn end(self) -> Result<ValueAddr> {
-        // Ok(())
-        todo!()
+        use serde::ser::SerializeSeq;
+        let seq_addr = self.seq.end()?;
+        self.instance
+            .memory()
+            .as_type_mut::<opa_object_elem_t>(self.elem_addr)?
+            .v = seq_addr.0 as intptr_t;
+        Ok(self.addr)
     }
+}
+
+pub struct ObjectSerializer<'a> {
+    ser: &'a mut Serializer,
+    addr: ValueAddr,
+    elem: opa_object_elem_t,
+    prev_elem: ValueAddr,
+    first: bool,
 }
 
 // Some `Serialize` types are not able to hold a key and value in memory at the
@@ -368,7 +463,7 @@ impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
 // `serialize_entry` method allows serializers to optimize for the case where
 // key and value are both available simultaneously. In JSON it doesn't make a
 // difference so the default behavior for `serialize_entry` is fine.
-impl<'a> ser::SerializeMap for &'a mut Serializer {
+impl<'a> ser::SerializeMap for ObjectSerializer<'a> {
     type Ok = ValueAddr;
     type Error = Error;
 
@@ -384,11 +479,12 @@ impl<'a> ser::SerializeMap for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        // if !self.output.ends_with('{') {
-        //     self.output += ",";
-        // }
-        // key.serialize(&mut **self)
-        todo!()
+        // store the key
+        let k_addr = key.serialize(&mut *self.ser)?;
+
+        // update the current entry's pointer to this key
+        self.elem.k = k_addr.0 as intptr_t;
+        Ok(())
     }
 
     // It doesn't make a difference whether the colon is printed at the end of
@@ -398,21 +494,46 @@ impl<'a> ser::SerializeMap for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        // self.output += ":";
-        //value.serialize(&mut **self)
-        todo!()
+        // store the value
+        let v_addr = value.serialize(&mut *self.ser)?;
+
+        // update the current entry's pointer to this value
+        self.elem.v = v_addr.0 as intptr_t;
+
+        // store this entry
+        let elem_addr = self.ser.alloc(mem::size_of::<opa_object_elem_t>())?;
+        self.ser.memset(elem_addr, self.elem.as_bytes())?;
+
+        if self.first {
+            self.ser
+                .instance
+                .memory()
+                .as_type_mut::<opa_object_t>(self.prev_elem)?
+                .head = elem_addr.0 as intptr_t;
+        } else {
+            self.ser
+                .instance
+                .memory()
+                .as_type_mut::<opa_object_elem_t>(self.prev_elem)?
+                .next = elem_addr.0 as intptr_t;
+        }
+
+        self.first = false;
+        self.prev_elem = elem_addr;
+        self.elem.k = 0;
+        self.elem.v = 0;
+        self.elem.next = 0;
+        Ok(())
     }
 
     fn end(self) -> Result<ValueAddr> {
-        // self.output += "}";
-        // Ok(())
-        todo!()
+        Ok(self.addr)
     }
 }
 
 // Structs are like maps in which the keys are constrained to be compile-time
 // constant strings.
-impl<'a> ser::SerializeStruct for &'a mut Serializer {
+impl<'a> ser::SerializeStruct for ObjectSerializer<'a> {
     type Ok = ValueAddr;
     type Error = Error;
 
@@ -420,25 +541,24 @@ impl<'a> ser::SerializeStruct for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        // if !self.output.ends_with('{') {
-        //     self.output += ",";
-        // }
-        // key.serialize(&mut **self)?;
-        // // self.output += ":";
-        // value.serialize(&mut **self)
-        todo!()
+        ser::SerializeMap::serialize_entry(self, key, value)
     }
 
     fn end(self) -> Result<ValueAddr> {
-        // self.output += "}";
-        // Ok(())
-        todo!()
+        ser::SerializeMap::end(self)
     }
+}
+
+pub struct StructVariantSerializer<'a> {
+    instance: Instance,
+    obj: ObjectSerializer<'a>,
+    addr: ValueAddr,
+    elem_addr: ValueAddr,
 }
 
 // Similar to `SerializeTupleVariant`, here the `end` method is responsible for
 // closing both of the curly braces opened by `serialize_struct_variant`.
-impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
+impl<'a> ser::SerializeStructVariant for StructVariantSerializer<'a> {
     type Ok = ValueAddr;
     type Error = Error;
 
@@ -446,24 +566,24 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        // if !self.output.ends_with('{') {
-        //     self.output += ",";
-        // }
-        // key.serialize(&mut **self)?;
-        // // self.output += ":";
-        // value.serialize(&mut **self)
-        todo!()
+        use serde::ser::SerializeMap;
+        self.obj.serialize_entry(key, value)
     }
 
     fn end(self) -> Result<ValueAddr> {
-        // self.output += "}}";
-        // Ok(())
-        todo!()
+        use serde::ser::SerializeMap;
+        let obj_addr = self.obj.end()?;
+        self.instance
+            .memory()
+            .as_type_mut::<opa_object_elem_t>(self.elem_addr)?
+            .v = obj_addr.0 as intptr_t;
+        Ok(self.addr)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::fs;
 
     use serde::{Deserialize, Serialize};
@@ -472,9 +592,19 @@ mod tests {
     use crate::opa::to_instance;
     use crate::wasm::{Instance, Memory, Module};
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
     enum TestEnum {
         Unit,
+        NewType(i64),
+        Tuple(i64, String),
+        Struct { age: i64, msg: String },
+    }
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Person {
+        name: String,
+        age: u8,
+        properties: HashMap<String, String>,
     }
 
     thread_local! {
@@ -518,4 +648,84 @@ mod tests {
     type_roundtrip!(test_serialize_unit, (), "null");
     type_roundtrip!(test_serialize_none, Option::<i8>::None, "null");
     type_roundtrip!(test_serialize_unit_variant, TestEnum::Unit, "\"Unit\"");
+    type_roundtrip!(
+        test_serialize_newtype_variant,
+        TestEnum::NewType(64),
+        "{\"NewType\":64}"
+    );
+    type_roundtrip!(
+        test_serialize_tuple_variant,
+        TestEnum::Tuple(64, "Hello".to_string()),
+        "{\"Tuple\":[64,\"Hello\"]}"
+    );
+
+    type_roundtrip!(
+        test_serialize_vec,
+        vec!["hello", "there"],
+        "[\"hello\",\"there\"]"
+    );
+
+    #[test]
+    fn test_serialize_map() {
+        EMPTY_MODULE.with(|module| {
+            let memory = Memory::from_module(module);
+            let instance = Instance::new(module, memory).unwrap();
+            let mut input = HashMap::new();
+            input.insert("key1", 3);
+            input.insert("key2", 2);
+            let addr = to_instance(instance.clone(), &input).unwrap();
+            let loaded = dump_json(&instance, addr).unwrap();
+            let result = serde_json::from_str(&loaded).unwrap();
+            assert_eq!(input, result);
+        })
+    }
+
+    #[test]
+    fn test_serialize_empty_map() {
+        EMPTY_MODULE.with(|module| {
+            let memory = Memory::from_module(module);
+            let instance = Instance::new(module, memory).unwrap();
+            let input: HashMap<String, i64> = HashMap::new();
+            let addr = to_instance(instance.clone(), &input).unwrap();
+            let loaded = dump_json(&instance, addr).unwrap();
+            let result = serde_json::from_str(&loaded).unwrap();
+            assert_eq!(input, result);
+        })
+    }
+
+    #[test]
+    fn test_serialize_struct() {
+        EMPTY_MODULE.with(|module| {
+            let memory = Memory::from_module(module);
+            let instance = Instance::new(module, memory).unwrap();
+            let mut properties = HashMap::new();
+            properties.insert("height".to_string(), "50".to_string());
+            properties.insert("mood".to_string(), "happy".to_string());
+            let person = Person {
+                name: "thename".to_string(),
+                age: 42,
+                properties,
+            };
+            let addr = to_instance(instance.clone(), &person).unwrap();
+            let loaded = dump_json(&instance, addr).unwrap();
+            let result = serde_json::from_str(&loaded).unwrap();
+            assert_eq!(person, result);
+        })
+    }
+
+    #[test]
+    fn test_serialize_struct_variant() {
+        EMPTY_MODULE.with(|module| {
+            let memory = Memory::from_module(module);
+            let instance = Instance::new(module, memory).unwrap();
+            let variant = TestEnum::Struct {
+                age: 64,
+                msg: "Hello".to_string(),
+            };
+            let addr = to_instance(instance.clone(), &variant).unwrap();
+            let loaded = dump_json(&instance, addr).unwrap();
+            let result = serde_json::from_str(&loaded).unwrap();
+            assert_eq!(variant, result);
+        })
+    }
 }

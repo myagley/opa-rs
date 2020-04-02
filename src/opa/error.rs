@@ -13,6 +13,12 @@ pub enum Error {
     Alloc,
     #[error("Failed to set memory.")]
     MemSet,
+    #[error("Expected sequence length. Serializer does not support serializing sequences without lengths.")]
+    ExpectedSeqLen,
+    #[error("Invalid serialized length. Expected len {0}, serialized {1}")]
+    InvalidSeqLen(usize, usize),
+    #[error("Invalid buffer length when casting to struct. Expected {0}, got {1}.")]
+    NotEnoughData(usize, usize),
 }
 
 impl ser::Error for Error {

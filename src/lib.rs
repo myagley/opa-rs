@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::{fmt, process};
+use std::{fmt, ops, process};
 
 use serde::Serialize;
 use tempfile::TempDir;
@@ -33,6 +33,14 @@ impl From<i32> for ValueAddr {
 impl From<ValueAddr> for i32 {
     fn from(v: ValueAddr) -> Self {
         v.0
+    }
+}
+
+impl ops::Add<usize> for ValueAddr {
+    type Output = ValueAddr;
+
+    fn add(self, rhs: usize) -> Self {
+        ValueAddr(self.0 + rhs as i32)
     }
 }
 
@@ -147,11 +155,6 @@ impl Policy {
 
     pub(crate) fn dump_json(&self, addr: ValueAddr) -> Result<String, Error> {
         dump_json(&self.instance, addr)
-    }
-
-    pub(crate) fn serialize_to<T: Serialize>(&self, value: T) -> Result<ValueAddr, Error> {
-        let addr = crate::opa::to_instance(self.instance.clone(), &value)?;
-        Ok(addr)
     }
 }
 

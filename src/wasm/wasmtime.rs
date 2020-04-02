@@ -110,6 +110,14 @@ impl Memory {
         Ok(s)
     }
 
+    pub unsafe fn data_unchecked(&self) -> &[u8] {
+        self.0.data_unchecked()
+    }
+
+    pub unsafe fn data_unchecked_mut(&self) -> &mut [u8] {
+        self.0.data_unchecked_mut()
+    }
+
     pub fn set(&self, addr: ValueAddr, value: &[u8]) -> Result<(), Error> {
         unsafe {
             std::ptr::copy_nonoverlapping(

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use serde::de;
 
 use crate::opa::Result;

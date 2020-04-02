@@ -6,8 +6,10 @@ pub use de::{from_instance, Deserializer};
 pub use error::{Error, Result};
 pub use ser::{to_instance, Serializer};
 
+use std::mem;
 use std::os::raw::*;
 
+use crate::wasm::Memory;
 use crate::ValueAddr;
 
 const OPA_NULL: c_uchar = 1;
@@ -16,14 +18,16 @@ const OPA_NUMBER: c_uchar = 3;
 const OPA_STRING: c_uchar = 4;
 const OPA_ARRAY: c_uchar = 5;
 const OPA_OBJECT: c_uchar = 6;
-const OPA_SET: c_uchar = 7;
+// const OPA_SET: c_uchar = 7;
 
 const OPA_NUMBER_REPR_INT: c_uchar = 1;
 const OPA_NUMBER_REPR_FLOAT: c_uchar = 2;
-const OPA_NUMBER_REPR_REF: c_uchar = 3;
+// const OPA_NUMBER_REPR_REF: c_uchar = 3;
 
 // wasm is 32-bit and doesn't support unsigned ints
+#[allow(non_camel_case_types)]
 type size_t = c_int;
+#[allow(non_camel_case_types)]
 type intptr_t = c_int;
 
 const NULL: opa_value = opa_value { ty: OPA_NULL };
@@ -44,10 +48,71 @@ pub trait ToBytes: Sized {
     }
 }
 
+pub unsafe trait FromBytes: Sized {
+    fn as_type(bytes: &[u8]) -> Result<&Self> {
+        if bytes.len() < mem::size_of::<Self>() {
+            return Err(Error::NotEnoughData(mem::size_of::<Self>(), bytes.len()));
+        }
+
+        let bytes_ptr = bytes.as_ptr();
+        let struct_ptr = bytes_ptr as *const Self;
+        let struct_ref = unsafe { &*struct_ptr };
+        Ok(struct_ref)
+    }
+
+    fn as_type_mut(bytes: &mut [u8]) -> Result<&mut Self> {
+        if bytes.len() < mem::size_of::<Self>() {
+            return Err(Error::NotEnoughData(mem::size_of::<Self>(), bytes.len()));
+        }
+
+        let bytes_ptr = bytes.as_ptr();
+        let struct_ptr = bytes_ptr as *mut Self;
+        let struct_ref = unsafe { &mut *struct_ptr };
+        Ok(struct_ref)
+    }
+}
+
+trait AsType {
+    fn as_type<T: FromBytes>(&self, addr: ValueAddr) -> Result<&T>;
+
+    fn as_type_mut<T: FromBytes>(&self, addr: ValueAddr) -> Result<&mut T>;
+}
+
+impl AsType for Memory {
+    fn as_type<T: FromBytes>(&self, addr: ValueAddr) -> Result<&T> {
+        let len = mem::size_of::<T>();
+        let start = addr.0 as usize;
+        let end = start + len;
+        let r = unsafe {
+            let bytes = &self.data_unchecked()[start..end];
+            T::as_type(bytes)?
+        };
+        Ok(r)
+    }
+
+    fn as_type_mut<T: FromBytes>(&self, addr: ValueAddr) -> Result<&mut T> {
+        let len = mem::size_of::<T>();
+        let start = addr.0 as usize;
+        let end = start + len;
+        let r = unsafe {
+            let bytes = &mut self.data_unchecked_mut()[start..end];
+            T::as_type_mut(bytes)?
+        };
+        Ok(r)
+    }
+}
+
 impl ToBytes for opa_value {}
 impl ToBytes for opa_boolean_t {}
 impl ToBytes for opa_number_t {}
 impl ToBytes for opa_string_t {}
+impl ToBytes for opa_array_t {}
+impl ToBytes for opa_array_elem_t {}
+impl ToBytes for opa_object_t {}
+impl ToBytes for opa_object_elem_t {}
+
+unsafe impl FromBytes for opa_object_t {}
+unsafe impl FromBytes for opa_object_elem_t {}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
