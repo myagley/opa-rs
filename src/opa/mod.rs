@@ -18,7 +18,7 @@ const OPA_NUMBER: c_uchar = 3;
 const OPA_STRING: c_uchar = 4;
 const OPA_ARRAY: c_uchar = 5;
 const OPA_OBJECT: c_uchar = 6;
-// const OPA_SET: c_uchar = 7;
+const OPA_SET: c_uchar = 7;
 
 const OPA_NUMBER_REPR_INT: c_uchar = 1;
 const OPA_NUMBER_REPR_FLOAT: c_uchar = 2;
@@ -111,6 +111,9 @@ impl ToBytes for opa_array_elem_t {}
 impl ToBytes for opa_object_t {}
 impl ToBytes for opa_object_elem_t {}
 
+unsafe impl FromBytes for opa_value {}
+unsafe impl FromBytes for opa_boolean_t {}
+unsafe impl FromBytes for opa_number_t {}
 unsafe impl FromBytes for opa_object_t {}
 unsafe impl FromBytes for opa_object_elem_t {}
 

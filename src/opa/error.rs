@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{convert, fmt, num};
 
 use serde::{de, ser};
 use thiserror::Error;
@@ -19,6 +19,16 @@ pub enum Error {
     InvalidSeqLen(usize, usize),
     #[error("Invalid buffer length when casting to struct. Expected {0}, got {1}.")]
     NotEnoughData(usize, usize),
+    #[error("Unknown type: {0}")]
+    UnknownType(u8),
+    #[error("Expected boolean value. Found type {0}")]
+    ExpectedBoolean(u8),
+    #[error("Expected number value. Found type {0}")]
+    ExpectedNumber(u8),
+    #[error("Expected integer value. Found repr {0}")]
+    ExpectedInteger(u8),
+    #[error("Integer conversion failed.")]
+    IntegerConversion(#[source] num::TryFromIntError),
 }
 
 impl ser::Error for Error {
@@ -30,5 +40,17 @@ impl ser::Error for Error {
 impl de::Error for Error {
     fn custom<T: fmt::Display>(msg: T) -> Self {
         Error::Message(msg.to_string())
+    }
+}
+
+impl From<num::TryFromIntError> for Error {
+    fn from(error: num::TryFromIntError) -> Self {
+        Error::IntegerConversion(error)
+    }
+}
+
+impl From<convert::Infallible> for Error {
+    fn from(_error: convert::Infallible) -> Error {
+        unreachable!()
     }
 }
