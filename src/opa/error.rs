@@ -39,6 +39,12 @@ pub enum Error {
     InvalidChar,
     #[error("Expected null value. Found type {0}")]
     ExpectedNull(u8),
+    #[error("Expected array value. Found type {0}")]
+    ExpectedArray(u8),
+    #[error("Expected object value. Found type {0}")]
+    ExpectedObject(u8),
+    #[error("Expected next address when parsing object element value")]
+    ExpectedNextAddr,
 }
 
 impl ser::Error for Error {

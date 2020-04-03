@@ -24,13 +24,13 @@ const OPA_NUMBER_REPR_INT: c_uchar = 1;
 const OPA_NUMBER_REPR_FLOAT: c_uchar = 2;
 // const OPA_NUMBER_REPR_REF: c_uchar = 3;
 
+const NULL: opa_value = opa_value { ty: OPA_NULL };
+
 // wasm is 32-bit and doesn't support unsigned ints
 #[allow(non_camel_case_types)]
 type size_t = c_int;
 #[allow(non_camel_case_types)]
 type intptr_t = c_int;
-
-const NULL: opa_value = opa_value { ty: OPA_NULL };
 
 pub trait ToBytes: Sized {
     fn as_slice(&self) -> &[Self] {
@@ -115,6 +115,8 @@ unsafe impl FromBytes for opa_value {}
 unsafe impl FromBytes for opa_boolean_t {}
 unsafe impl FromBytes for opa_number_t {}
 unsafe impl FromBytes for opa_string_t {}
+unsafe impl FromBytes for opa_array_t {}
+unsafe impl FromBytes for opa_array_elem_t {}
 unsafe impl FromBytes for opa_object_t {}
 unsafe impl FromBytes for opa_object_elem_t {}
 

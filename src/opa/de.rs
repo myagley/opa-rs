@@ -4,11 +4,7 @@ use std::convert::TryFrom;
 use std::os::raw::*;
 use std::{slice, str};
 
-use serde::de::{
-    self, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess,
-    Visitor,
-};
-use serde::Deserialize;
+use serde::de::{self, IntoDeserializer, Visitor};
 
 use crate::opa::{Error, Result};
 use crate::wasm::Instance;
@@ -254,18 +250,18 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
     // The `Serializer` implementation on the previous page serialized byte
     // arrays as JSON arrays of bytes. Handle that representation here.
-    fn deserialize_bytes<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        self.deserialize_seq(visitor)
     }
 
-    fn deserialize_byte_buf<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        self.deserialize_bytes(visitor)
     }
 
     // An absent optional is represented as the JSON `null` and a present
@@ -325,20 +321,19 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        // // Parse the opening bracket of the sequence.
-        // if self.next_char()? == '[' {
-        //     // Give the visitor access to each element of the sequence.
-        //     let value = visitor.visit_seq(CommaSeparated::new(&mut self))?;
-        //     // Parse the closing bracket of the sequence.
-        //     if self.next_char()? == ']' {
-        //         Ok(value)
-        //     } else {
-        //         Err(Error::ExpectedArrayEnd)
-        //     }
-        // } else {
-        //     Err(Error::ExpectedArray)
-        // }
-        todo!()
+        let ty = self.peek_type(self.addr)?;
+        if ty != OPA_ARRAY {
+            return Err(Error::ExpectedArray(ty as u8));
+        }
+
+        let array = self.instance.memory().as_type::<opa_array_t>(self.addr)?;
+        let access = ArrayAccess {
+            de: &mut self,
+            n: 0,
+            len: array.len as usize,
+            elems: ValueAddr(array.elems as i32),
+        };
+        visitor.visit_seq(access)
     }
 
     // Tuples look just like sequences in JSON. Some formats may be able to
@@ -374,20 +369,21 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        // // Parse the opening brace of the map.
-        // if self.next_char()? == '{' {
-        //     // Give the visitor access to each entry of the map.
-        //     let value = visitor.visit_map(CommaSeparated::new(&mut self))?;
-        //     // Parse the closing brace of the map.
-        //     if self.next_char()? == '}' {
-        //         Ok(value)
-        //     } else {
-        //         Err(Error::ExpectedMapEnd)
-        //     }
-        // } else {
-        //     Err(Error::ExpectedMap)
-        // }
-        todo!()
+        let ty = self.peek_type(self.addr)?;
+        if ty != OPA_OBJECT {
+            return Err(Error::ExpectedObject(ty as u8));
+        }
+
+        let object = self.instance.memory().as_type::<opa_object_t>(self.addr)?;
+        let access = ObjectAccess {
+            de: &mut self,
+            next: if object.head != 0 {
+                Some(object.head.into())
+            } else {
+                None
+            },
+        };
+        visitor.visit_map(access)
     }
 
     // Structs look just like maps in JSON.
@@ -465,6 +461,85 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 }
 
+struct ArrayAccess<'a, 'de: 'a> {
+    de: &'a mut Deserializer<'de>,
+    n: usize,
+    len: usize,
+    elems: ValueAddr,
+}
+
+impl<'de, 'a> de::SeqAccess<'de> for ArrayAccess<'a, 'de> {
+    type Error = Error;
+
+    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
+    where
+        T: de::DeserializeSeed<'de>,
+    {
+        if self.n == self.len {
+            return Ok(None);
+        }
+        let addr = self.elems + self.n * mem::size_of::<opa_array_elem_t>();
+        let elem = self
+            .de
+            .instance
+            .memory()
+            .as_type::<opa_array_elem_t>(addr)?;
+
+        self.n = self.n + 1;
+        self.de.addr = ValueAddr(elem.v as i32);
+        seed.deserialize(&mut *self.de).map(Some)
+    }
+}
+
+struct ObjectAccess<'a, 'de: 'a> {
+    de: &'a mut Deserializer<'de>,
+    next: Option<ValueAddr>,
+}
+
+impl<'de, 'a> de::MapAccess<'de> for ObjectAccess<'a, 'de> {
+    type Error = Error;
+
+    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
+    where
+        K: de::DeserializeSeed<'de>,
+    {
+        if let Some(next_addr) = self.next {
+            let elem = self
+                .de
+                .instance
+                .memory()
+                .as_type::<opa_object_elem_t>(next_addr)?;
+            self.de.addr = ValueAddr(elem.k as i32);
+            seed.deserialize(&mut *self.de).map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
+    where
+        V: de::DeserializeSeed<'de>,
+    {
+        if let Some(next_addr) = self.next {
+            let elem = self
+                .de
+                .instance
+                .memory()
+                .as_type::<opa_object_elem_t>(next_addr)?;
+            self.next = if elem.next != 0 {
+                Some(elem.next.into())
+            } else {
+                None
+            };
+
+            self.de.addr = ValueAddr(elem.v as i32);
+            seed.deserialize(&mut *self.de)
+        } else {
+            Err(Error::ExpectedNextAddr)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -482,6 +557,9 @@ mod tests {
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct NewTypeStruct(i64);
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct TupleStruct(i64, String);
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     enum TestEnum {
@@ -544,4 +622,65 @@ mod tests {
         NewTypeStruct,
         NewTypeStruct(56)
     );
+
+    type_roundtrip!(
+        test_deserialize_vec,
+        Vec<String>,
+        vec!["hello".to_string(), "there".to_string()]
+    );
+    type_roundtrip!(
+        test_deserialize_tuple,
+        (i64, String),
+        (42, "hello".to_string())
+    );
+    type_roundtrip!(
+        test_deserialize_tuple_struct,
+        TupleStruct,
+        TupleStruct(42, "hello".to_string())
+    );
+
+    #[test]
+    fn test_deserialize_map() {
+        EMPTY_MODULE.with(|module| {
+            let memory = Memory::from_module(module);
+            let instance = Instance::new(module, memory).unwrap();
+            let mut input = HashMap::new();
+            input.insert("key1".to_string(), 3);
+            input.insert("key2".to_string(), 2);
+            let addr = to_instance(instance.clone(), &input).unwrap();
+            let loaded = from_instance(addr, &instance).unwrap();
+            assert_eq!(input, loaded);
+        })
+    }
+
+    #[test]
+    fn test_deserialize_empty_map() {
+        EMPTY_MODULE.with(|module| {
+            let memory = Memory::from_module(module);
+            let instance = Instance::new(module, memory).unwrap();
+            let input: HashMap<String, i64> = HashMap::new();
+            let addr = to_instance(instance.clone(), &input).unwrap();
+            let loaded = from_instance(addr, &instance).unwrap();
+            assert_eq!(input, loaded);
+        })
+    }
+
+    #[test]
+    fn test_deserialize_struct() {
+        EMPTY_MODULE.with(|module| {
+            let memory = Memory::from_module(module);
+            let instance = Instance::new(module, memory).unwrap();
+            let mut properties = HashMap::new();
+            properties.insert("height".to_string(), "50".to_string());
+            properties.insert("mood".to_string(), "happy".to_string());
+            let person = Person {
+                name: "thename".to_string(),
+                age: 42,
+                properties,
+            };
+            let addr = to_instance(instance.clone(), &person).unwrap();
+            let loaded = from_instance(addr, &instance).unwrap();
+            assert_eq!(person, loaded);
+        })
+    }
 }
