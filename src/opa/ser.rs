@@ -37,6 +37,19 @@ impl Serializer {
             .set(addr, bytes)
             .map_err(|_| Error::MemSet)
     }
+
+    fn store<T: AsBytes + ?Sized>(&self, value: &T) -> Result<ValueAddr> {
+        let addr = self
+            .instance
+            .functions()
+            .malloc(value.as_bytes().len())
+            .map_err(|_| Error::Alloc)?;
+        self.instance
+            .memory()
+            .set(addr, value.as_bytes())
+            .map_err(|_| Error::MemSet)?;
+        Ok(addr)
+    }
 }
 
 impl<'a> ser::Serializer for &'a mut Serializer {
@@ -52,10 +65,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     type SerializeStructVariant = StructVariantSerializer<'a>;
 
     fn serialize_bool(self, v: bool) -> Result<ValueAddr> {
-        let len = mem::size_of::<opa_boolean_t>();
-        let addr = self.alloc(len)?;
-        self.memset(addr, opa_boolean_t::new(v).as_bytes())?;
-        Ok(addr)
+        self.store(&opa_boolean_t::new(v))
     }
 
     fn serialize_i8(self, v: i8) -> Result<ValueAddr> {
@@ -71,10 +81,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_i64(self, v: i64) -> Result<ValueAddr> {
-        let len = mem::size_of::<opa_number_t>();
-        let addr = self.alloc(len)?;
-        self.memset(addr, opa_number_t::from_i64(v).as_bytes())?;
-        Ok(addr)
+        self.store(&opa_number_t::from_i64(v))
     }
 
     fn serialize_u8(self, v: u8) -> Result<ValueAddr> {
@@ -98,10 +105,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_f64(self, v: f64) -> Result<ValueAddr> {
-        let len = mem::size_of::<opa_number_t>();
-        let addr = self.alloc(len)?;
-        self.memset(addr, opa_number_t::from_f64(v).as_bytes())?;
-        Ok(addr)
+        self.store(&opa_number_t::from_f64(v))
     }
 
     fn serialize_char(self, v: char) -> Result<ValueAddr> {
@@ -109,15 +113,9 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_str(self, v: &str) -> Result<ValueAddr> {
-        let struct_len = mem::size_of::<opa_string_t>();
-        let struct_addr = self.alloc(struct_len)?;
-        let data_len = v.len();
-        let data_addr = self.alloc(data_len)?;
-
+        let data_addr = self.store(v)?;
         let s = opa_string_t::from_str(v, data_addr);
-        self.memset(data_addr, v.as_bytes())?;
-        self.memset(struct_addr, s.as_bytes())?;
-        Ok(struct_addr)
+        self.store(&s)
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<ValueAddr> {
@@ -141,10 +139,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_unit(self) -> Result<ValueAddr> {
-        let len = mem::size_of::<opa_value>();
-        let addr = self.alloc(len)?;
-        self.memset(addr, NULL.as_bytes())?;
-        Ok(addr)
+        self.store(&NULL)
     }
 
     fn serialize_unit_struct(self, _name: &'static str) -> Result<ValueAddr> {
@@ -186,26 +181,15 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
         if let Some(len) = len {
-            let struct_len = mem::size_of::<opa_array_t>();
-            let struct_addr = self.alloc(struct_len)?;
+            let elems_addr = self.alloc(len * mem::size_of::<opa_array_elem_t>())?;
+            let array = opa_array_t::new(elems_addr, len);
+            let addr = self.store(&array)?;
 
-            let elems_len = len * mem::size_of::<opa_array_elem_t>();
-            let elems_addr = self.alloc(elems_len)?;
-
-            let hdr = opa_value { ty: OPA_ARRAY };
-            let seq = opa_array_t {
-                hdr,
-                elems: elems_addr.0 as intptr_t,
-                len: len as size_t,
-                cap: len as size_t,
-            };
-
-            self.memset(struct_addr, seq.as_bytes())?;
             let serializer = ArraySerializer {
                 ser: self,
                 count: 0,
                 len,
-                addr: struct_addr,
+                addr,
                 elems_addr,
             };
             Ok(serializer)
@@ -235,42 +219,32 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     ) -> Result<Self::SerializeTupleVariant> {
         let instance = self.instance.clone();
         let variant_addr = variant.serialize(&mut *self)?;
+
         let elem = opa_object_elem_t {
             k: variant_addr.0 as intptr_t,
             v: 0,
             next: 0,
         };
-        let elem_addr = self.alloc(mem::size_of::<opa_object_elem_t>())?;
-        self.memset(elem_addr, elem.as_bytes())?;
+        let elem_addr = self.store(&elem)?;
 
-        let hdr = opa_value { ty: OPA_OBJECT };
-        let obj = opa_object_t {
-            hdr,
-            head: elem_addr.0 as intptr_t,
-        };
-
-        let obj_addr = self.alloc(mem::size_of::<opa_object_t>())?;
-        self.memset(obj_addr, obj.as_bytes())?;
+        let obj = opa_object_t::new(elem_addr);
+        let addr = self.store(&obj)?;
 
         let seq = self.serialize_seq(Some(len))?;
 
         let serializer = TupleVariantSerializer {
             instance,
             seq,
-            addr: obj_addr,
+            addr,
             elem_addr,
         };
         Ok(serializer)
     }
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
-        let len = mem::size_of::<opa_object_t>();
-        let addr = self.alloc(len)?;
+        let obj = opa_object_t::new(ValueAddr(0));
+        let addr = self.store(&obj)?;
 
-        let hdr = opa_value { ty: OPA_OBJECT };
-        let obj = opa_object_t { hdr, head: 0 };
-
-        self.memset(addr, obj.as_bytes())?;
         let elem = opa_object_elem_t {
             k: 0,
             v: 0,
@@ -304,24 +278,16 @@ impl<'a> ser::Serializer for &'a mut Serializer {
             v: 0,
             next: 0,
         };
-        let elem_addr = self.alloc(mem::size_of::<opa_object_elem_t>())?;
-        self.memset(elem_addr, elem.as_bytes())?;
+        let elem_addr = self.store(&elem)?;
 
-        let hdr = opa_value { ty: OPA_OBJECT };
-        let obj = opa_object_t {
-            hdr,
-            head: elem_addr.0 as intptr_t,
-        };
-
-        let obj_addr = self.alloc(mem::size_of::<opa_object_t>())?;
-        self.memset(obj_addr, obj.as_bytes())?;
+        let obj = opa_object_t::new(elem_addr);
+        let addr = self.store(&obj)?;
 
         let obj = self.serialize_map(Some(len))?;
-
         let serializer = StructVariantSerializer {
             instance,
             obj,
-            addr: obj_addr,
+            addr,
             elem_addr,
         };
         Ok(serializer)
@@ -501,8 +467,7 @@ impl<'a> ser::SerializeMap for ObjectSerializer<'a> {
         self.elem.v = v_addr.0 as intptr_t;
 
         // store this entry
-        let elem_addr = self.ser.alloc(mem::size_of::<opa_object_elem_t>())?;
-        self.ser.memset(elem_addr, self.elem.as_bytes())?;
+        let elem_addr = self.ser.store(&self.elem)?;
 
         if self.first {
             self.ser

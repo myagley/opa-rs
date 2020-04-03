@@ -32,19 +32,56 @@ type size_t = c_int;
 #[allow(non_camel_case_types)]
 type intptr_t = c_int;
 
-pub trait ToBytes: Sized {
-    fn as_slice(&self) -> &[Self] {
-        unsafe { std::slice::from_raw_parts(self as *const Self, 1) }
-    }
+pub trait AsBytes {
+    fn as_bytes(&self) -> &[u8];
+}
 
-    fn as_bytes(&self) -> &[u8] {
-        let slice = self.as_slice();
-        unsafe {
-            std::slice::from_raw_parts(
-                slice.as_ptr() as *const _,
-                slice.len() * std::mem::size_of::<Self>(),
-            )
+macro_rules! as_bytes {
+    ($ty:ty) => {
+        impl AsBytes for $ty {
+            fn as_bytes(&self) -> &[u8] {
+                unsafe {
+                    let slice = std::slice::from_raw_parts(self as *const Self, 1);
+                    std::slice::from_raw_parts(
+                        slice.as_ptr() as *const _,
+                        slice.len() * std::mem::size_of::<Self>(),
+                    )
+                }
+            }
         }
+    };
+}
+
+as_bytes!(opa_value);
+as_bytes!(opa_boolean_t);
+as_bytes!(opa_number_t);
+as_bytes!(opa_string_t);
+as_bytes!(opa_array_t);
+as_bytes!(opa_array_elem_t);
+as_bytes!(opa_object_t);
+as_bytes!(opa_object_elem_t);
+
+impl AsBytes for [u8] {
+    fn as_bytes(&self) -> &[u8] {
+        &self
+    }
+}
+
+impl<'a> AsBytes for &'a [u8] {
+    fn as_bytes(&self) -> &[u8] {
+        *self
+    }
+}
+
+impl AsBytes for str {
+    fn as_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl<'a> AsBytes for &'a str {
+    fn as_bytes(&self) -> &[u8] {
+        str::as_bytes(&*self)
     }
 }
 
@@ -109,15 +146,6 @@ impl AsType for Memory {
         Ok(r)
     }
 }
-
-impl ToBytes for opa_value {}
-impl ToBytes for opa_boolean_t {}
-impl ToBytes for opa_number_t {}
-impl ToBytes for opa_string_t {}
-impl ToBytes for opa_array_t {}
-impl ToBytes for opa_array_elem_t {}
-impl ToBytes for opa_object_t {}
-impl ToBytes for opa_object_elem_t {}
 
 unsafe impl FromBytes for opa_value {}
 unsafe impl FromBytes for opa_boolean_t {}
@@ -233,6 +261,18 @@ pub struct opa_array_t {
     pub cap: size_t,
 }
 
+impl opa_array_t {
+    pub fn new(elems: ValueAddr, len: usize) -> Self {
+        let hdr = opa_value { ty: OPA_ARRAY };
+        Self {
+            hdr,
+            elems: elems.0 as intptr_t,
+            len: len as size_t,
+            cap: 0 as size_t,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct opa_object_elem_t {
@@ -246,6 +286,16 @@ pub struct opa_object_elem_t {
 pub struct opa_object_t {
     pub hdr: opa_value,
     pub head: intptr_t,
+}
+
+impl opa_object_t {
+    pub fn new(head: ValueAddr) -> Self {
+        let hdr = opa_value { ty: OPA_OBJECT };
+        Self {
+            hdr,
+            head: head.0 as i32,
+        }
+    }
 }
 
 #[repr(C)]
