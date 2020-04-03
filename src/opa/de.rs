@@ -2,6 +2,7 @@
 
 use std::convert::TryFrom;
 use std::os::raw::*;
+use std::{slice, str};
 
 use serde::de::{
     self, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess,
@@ -26,9 +27,9 @@ impl<'de> Deserializer<'de> {
     }
 }
 
-pub fn from_instance<'a, T>(addr: ValueAddr, instance: &'a Instance) -> Result<T>
+pub fn from_instance<T>(addr: ValueAddr, instance: &Instance) -> Result<T>
 where
-    T: de::Deserialize<'a>,
+    T: de::DeserializeOwned,
 {
     let mut deserializer = Deserializer::from_instance(addr, instance);
     let t = T::deserialize(&mut deserializer)?;
@@ -44,7 +45,7 @@ impl<'de> Deserializer<'de> {
     }
 
     fn parse_bool(&self, addr: ValueAddr) -> Result<bool> {
-        let ty = self.instance.memory().as_type::<opa_value>(addr)?.ty;
+        let ty = self.peek_type(self.addr)?;
         if ty != OPA_BOOLEAN {
             return Err(Error::ExpectedBoolean(ty as u8));
         }
@@ -62,7 +63,7 @@ impl<'de> Deserializer<'de> {
         T: TryFrom<i64>,
         <T as TryFrom<i64>>::Error: Into<Error>,
     {
-        let ty = self.instance.memory().as_type::<opa_value>(addr)?.ty;
+        let ty = self.peek_type(self.addr)?;
         if ty != OPA_NUMBER {
             return Err(Error::ExpectedNumber(ty as u8));
         }
@@ -76,8 +77,34 @@ impl<'de> Deserializer<'de> {
         Ok(i)
     }
 
-    fn parse_string(&self, addr: ValueAddr) -> Result<&'de str> {
-        unimplemented!();
+    fn parse_float(&self, addr: ValueAddr) -> Result<f64> {
+        let ty = self.peek_type(self.addr)?;
+        if ty != OPA_NUMBER {
+            return Err(Error::ExpectedNumber(ty as u8));
+        }
+
+        let n = self.instance.memory().as_type::<opa_number_t>(addr)?;
+        if n.repr != OPA_NUMBER_REPR_FLOAT {
+            return Err(Error::ExpectedFloat(n.repr as u8));
+        }
+
+        let f = unsafe { n.v.f };
+        Ok(f)
+    }
+
+    fn parse_string(&self, addr: ValueAddr) -> Result<&str> {
+        let ty = self.peek_type(self.addr)?;
+        if ty != OPA_STRING {
+            return Err(Error::ExpectedString(ty as u8));
+        }
+        let s = self.instance.memory().as_type::<opa_string_t>(addr)?;
+        let s = unsafe {
+            let start = s.v as usize;
+            let end = start + s.len as usize;
+            let slice = &self.instance.memory().data_unchecked()[start..end];
+            str::from_utf8(slice).map_err(Error::InvalidUtf8)?
+        };
+        Ok(s)
     }
 }
 
@@ -182,30 +209,31 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         visitor.visit_u64(self.parse_int(self.addr)?)
     }
 
-    // Float parsing is stupidly hard.
-    fn deserialize_f32<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        visitor.visit_f32(self.parse_float(self.addr)? as f32)
     }
 
     // Float parsing is stupidly hard.
-    fn deserialize_f64<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        visitor.visit_f64(self.parse_float(self.addr)?)
     }
 
     // The `Serializer` implementation on the previous page serialized chars as
     // single-character strings so handle that representation here.
-    fn deserialize_char<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_char<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        // Parse a string, check that it is one character, call `visit_char`.
-        unimplemented!()
+        let s = self.parse_string(self.addr)?;
+        s.chars()
+            .next()
+            .map_or(Err(Error::InvalidChar), |c| visitor.visit_char(c))
     }
 
     // Refer to the "Understanding deserializer lifetimes" page for information
@@ -214,7 +242,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        visitor.visit_borrowed_str(self.parse_string(self.addr)?)
+        visitor.visit_str(self.parse_string(self.addr)?)
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
@@ -252,13 +280,11 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        // if self.input.starts_with("null") {
-        //     self.input = &self.input["null".len()..];
-        //     visitor.visit_none()
-        // } else {
-        //     visitor.visit_some(self)
-        // }
-        todo!()
+        if self.peek_type(self.addr)? == OPA_NULL {
+            visitor.visit_none()
+        } else {
+            visitor.visit_some(self)
+        }
     }
 
     // In Serde, unit means an anonymous value containing no data.
@@ -266,13 +292,12 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        // if self.input.starts_with("null") {
-        //     self.input = &self.input["null".len()..];
-        //     visitor.visit_unit()
-        // } else {
-        //     Err(Error::ExpectedNull)
-        // }
-        todo!()
+        let ty = self.peek_type(self.addr)?;
+        if ty == OPA_NULL {
+            visitor.visit_unit()
+        } else {
+            Err(Error::ExpectedNull(ty as u8))
+        }
     }
 
     // Unit struct means a named value containing no data.
@@ -453,6 +478,12 @@ mod tests {
     use super::*;
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct UnitStruct;
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct NewTypeStruct(i64);
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
     enum TestEnum {
         Unit,
         NewType(i64),
@@ -495,4 +526,22 @@ mod tests {
     type_roundtrip!(test_deserialize_i16, i16, 42_i16);
     type_roundtrip!(test_deserialize_i32, i32, 42_i32);
     type_roundtrip!(test_deserialize_i64, i64, 42_i64);
+    type_roundtrip!(test_deserialize_u8, u8, 42_u8);
+    type_roundtrip!(test_deserialize_u16, u16, 42_u16);
+    type_roundtrip!(test_deserialize_u32, u32, 42_u32);
+    type_roundtrip!(test_deserialize_u64, u64, 42_u64);
+    type_roundtrip!(test_deserialize_f32, f32, 1.234_f32);
+    type_roundtrip!(test_deserialize_f64, f64, 1.234_f64);
+
+    type_roundtrip!(test_deserialize_string, String, "hello there".to_string());
+    type_roundtrip!(test_deserialize_char, char, 'a');
+    type_roundtrip!(test_deserialize_none, Option<i64>, Option::<i64>::None);
+    type_roundtrip!(test_deserialize_some, Option<i64>, Some(56));
+    // type_roundtrip!(test_deserialize_unit, (), ())
+    type_roundtrip!(test_deserialize_unit_struct, UnitStruct, UnitStruct);
+    type_roundtrip!(
+        test_deserialize_newtype_struct,
+        NewTypeStruct,
+        NewTypeStruct(56)
+    );
 }

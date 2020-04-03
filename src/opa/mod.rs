@@ -114,6 +114,7 @@ impl ToBytes for opa_object_elem_t {}
 unsafe impl FromBytes for opa_value {}
 unsafe impl FromBytes for opa_boolean_t {}
 unsafe impl FromBytes for opa_number_t {}
+unsafe impl FromBytes for opa_string_t {}
 unsafe impl FromBytes for opa_object_t {}
 unsafe impl FromBytes for opa_object_elem_t {}
 

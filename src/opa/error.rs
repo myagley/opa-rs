@@ -1,4 +1,4 @@
-use std::{convert, fmt, num};
+use std::{convert, fmt, num, str};
 
 use serde::{de, ser};
 use thiserror::Error;
@@ -27,8 +27,18 @@ pub enum Error {
     ExpectedNumber(u8),
     #[error("Expected integer value. Found repr {0}")]
     ExpectedInteger(u8),
+    #[error("Expected float value. Found repr {0}")]
+    ExpectedFloat(u8),
     #[error("Integer conversion failed.")]
     IntegerConversion(#[source] num::TryFromIntError),
+    #[error("Expected string value. Found type {0}")]
+    ExpectedString(u8),
+    #[error("Invalid utf8 string.")]
+    InvalidUtf8(#[source] str::Utf8Error),
+    #[error("Invalid char. Expected a string of length one.")]
+    InvalidChar,
+    #[error("Expected null value. Found type {0}")]
+    ExpectedNull(u8),
 }
 
 impl ser::Error for Error {
