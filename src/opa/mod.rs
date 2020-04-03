@@ -80,6 +80,10 @@ trait AsType {
 
 impl AsType for Memory {
     fn as_type<T: FromBytes>(&self, addr: ValueAddr) -> Result<&T> {
+        if addr.0 == 0 {
+            return Err(Error::NullPtr);
+        }
+
         let len = mem::size_of::<T>();
         let start = addr.0 as usize;
         let end = start + len;
@@ -91,6 +95,10 @@ impl AsType for Memory {
     }
 
     fn as_type_mut<T: FromBytes>(&self, addr: ValueAddr) -> Result<&mut T> {
+        if addr.0 == 0 {
+            return Err(Error::NullPtr);
+        }
+
         let len = mem::size_of::<T>();
         let start = addr.0 as usize;
         let end = start + len;

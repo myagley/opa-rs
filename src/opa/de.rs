@@ -2,7 +2,7 @@
 
 use std::convert::TryFrom;
 use std::os::raw::*;
-use std::{slice, str};
+use std::str;
 
 use serde::de::{self, IntoDeserializer, Visitor};
 
@@ -33,20 +33,20 @@ where
 }
 
 impl<'de> Deserializer<'de> {
-    fn peek_type(&self, addr: ValueAddr) -> Result<c_uchar> {
+    fn peek_type(&self) -> Result<c_uchar> {
         self.instance
             .memory()
-            .as_type::<opa_value>(addr)
+            .as_type::<opa_value>(self.addr)
             .map(|r| r.ty)
     }
 
-    fn parse_bool(&self, addr: ValueAddr) -> Result<bool> {
-        let ty = self.peek_type(self.addr)?;
+    fn parse_bool(&self) -> Result<bool> {
+        let ty = self.peek_type()?;
         if ty != OPA_BOOLEAN {
             return Err(Error::ExpectedBoolean(ty as u8));
         }
 
-        let b = self.instance.memory().as_type::<opa_boolean_t>(addr)?;
+        let b = self.instance.memory().as_type::<opa_boolean_t>(self.addr)?;
         if b.v == 0 {
             Ok(false)
         } else {
@@ -54,17 +54,17 @@ impl<'de> Deserializer<'de> {
         }
     }
 
-    fn parse_int<T: TryFrom<i64>>(&self, addr: ValueAddr) -> Result<T>
+    fn parse_int<T: TryFrom<i64>>(&self) -> Result<T>
     where
         T: TryFrom<i64>,
         <T as TryFrom<i64>>::Error: Into<Error>,
     {
-        let ty = self.peek_type(self.addr)?;
+        let ty = self.peek_type()?;
         if ty != OPA_NUMBER {
             return Err(Error::ExpectedNumber(ty as u8));
         }
 
-        let n = self.instance.memory().as_type::<opa_number_t>(addr)?;
+        let n = self.instance.memory().as_type::<opa_number_t>(self.addr)?;
         if n.repr != OPA_NUMBER_REPR_INT {
             return Err(Error::ExpectedInteger(n.repr as u8));
         }
@@ -73,13 +73,13 @@ impl<'de> Deserializer<'de> {
         Ok(i)
     }
 
-    fn parse_float(&self, addr: ValueAddr) -> Result<f64> {
-        let ty = self.peek_type(self.addr)?;
+    fn parse_float(&self) -> Result<f64> {
+        let ty = self.peek_type()?;
         if ty != OPA_NUMBER {
             return Err(Error::ExpectedNumber(ty as u8));
         }
 
-        let n = self.instance.memory().as_type::<opa_number_t>(addr)?;
+        let n = self.instance.memory().as_type::<opa_number_t>(self.addr)?;
         if n.repr != OPA_NUMBER_REPR_FLOAT {
             return Err(Error::ExpectedFloat(n.repr as u8));
         }
@@ -88,12 +88,12 @@ impl<'de> Deserializer<'de> {
         Ok(f)
     }
 
-    fn parse_string(&self, addr: ValueAddr) -> Result<&str> {
-        let ty = self.peek_type(self.addr)?;
+    fn parse_string(&self) -> Result<&str> {
+        let ty = self.peek_type()?;
         if ty != OPA_STRING {
             return Err(Error::ExpectedString(ty as u8));
         }
-        let s = self.instance.memory().as_type::<opa_string_t>(addr)?;
+        let s = self.instance.memory().as_type::<opa_string_t>(self.addr)?;
         let s = unsafe {
             let start = s.v as usize;
             let end = start + s.len as usize;
@@ -114,7 +114,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        match self.peek_type(self.addr)? {
+        match self.peek_type()? {
             OPA_NULL => self.deserialize_unit(visitor),
             OPA_BOOLEAN => self.deserialize_bool(visitor),
             OPA_NUMBER => self.deserialize_i64(visitor),
@@ -144,7 +144,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        visitor.visit_bool(self.parse_bool(self.addr)?)
+        visitor.visit_bool(self.parse_bool()?)
     }
 
     // The `parse_signed` function is generic over the integer type `T` so here
@@ -153,63 +153,63 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        visitor.visit_i8(self.parse_int(self.addr)?)
+        visitor.visit_i8(self.parse_int()?)
     }
 
     fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_i16(self.parse_int(self.addr)?)
+        visitor.visit_i16(self.parse_int()?)
     }
 
     fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_i32(self.parse_int(self.addr)?)
+        visitor.visit_i32(self.parse_int()?)
     }
 
     fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_i64(self.parse_int(self.addr)?)
+        visitor.visit_i64(self.parse_int()?)
     }
 
     fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_u8(self.parse_int(self.addr)?)
+        visitor.visit_u8(self.parse_int()?)
     }
 
     fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_u16(self.parse_int(self.addr)?)
+        visitor.visit_u16(self.parse_int()?)
     }
 
     fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_u32(self.parse_int(self.addr)?)
+        visitor.visit_u32(self.parse_int()?)
     }
 
     fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_u64(self.parse_int(self.addr)?)
+        visitor.visit_u64(self.parse_int()?)
     }
 
     fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_f32(self.parse_float(self.addr)? as f32)
+        visitor.visit_f32(self.parse_float()? as f32)
     }
 
     // Float parsing is stupidly hard.
@@ -217,7 +217,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        visitor.visit_f64(self.parse_float(self.addr)?)
+        visitor.visit_f64(self.parse_float()?)
     }
 
     // The `Serializer` implementation on the previous page serialized chars as
@@ -226,7 +226,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        let s = self.parse_string(self.addr)?;
+        let s = self.parse_string()?;
         s.chars()
             .next()
             .map_or(Err(Error::InvalidChar), |c| visitor.visit_char(c))
@@ -238,7 +238,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        visitor.visit_str(self.parse_string(self.addr)?)
+        visitor.visit_str(self.parse_string()?)
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
@@ -276,7 +276,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        if self.peek_type(self.addr)? == OPA_NULL {
+        if self.peek_type()? == OPA_NULL {
             visitor.visit_none()
         } else {
             visitor.visit_some(self)
@@ -288,7 +288,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        let ty = self.peek_type(self.addr)?;
+        let ty = self.peek_type()?;
         if ty == OPA_NULL {
             visitor.visit_unit()
         } else {
@@ -317,22 +317,17 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     // Deserialization of compound types like sequences and maps happens by
     // passing the visitor an "Access" object that gives it the ability to
     // iterate through the data contained in the sequence.
-    fn deserialize_seq<V>(mut self, visitor: V) -> Result<V::Value>
+    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        let ty = self.peek_type(self.addr)?;
+        let ty = self.peek_type()?;
         if ty != OPA_ARRAY {
             return Err(Error::ExpectedArray(ty as u8));
         }
 
         let array = self.instance.memory().as_type::<opa_array_t>(self.addr)?;
-        let access = ArrayAccess {
-            de: &mut self,
-            n: 0,
-            len: array.len as usize,
-            elems: ValueAddr(array.elems as i32),
-        };
+        let access = ArrayAccess::new(self, &array);
         visitor.visit_seq(access)
     }
 
@@ -365,24 +360,17 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     // Much like `deserialize_seq` but calls the visitors `visit_map` method
     // with a `MapAccess` implementation, rather than the visitor's `visit_seq`
     // method with a `SeqAccess` implementation.
-    fn deserialize_map<V>(mut self, visitor: V) -> Result<V::Value>
+    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        let ty = self.peek_type(self.addr)?;
+        let ty = self.peek_type()?;
         if ty != OPA_OBJECT {
             return Err(Error::ExpectedObject(ty as u8));
         }
 
         let object = self.instance.memory().as_type::<opa_object_t>(self.addr)?;
-        let access = ObjectAccess {
-            de: &mut self,
-            next: if object.head != 0 {
-                Some(object.head.into())
-            } else {
-                None
-            },
-        };
+        let access = ObjectAccess::new(self, &object);
         visitor.visit_map(access)
     }
 
@@ -413,22 +401,11 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        // if self.peek_char()? == '"' {
-        //     // Visit a unit variant.
-        //     visitor.visit_enum(self.parse_string()?.into_deserializer())
-        // } else if self.next_char()? == '{' {
-        //     // Visit a newtype variant, tuple variant, or struct variant.
-        //     let value = visitor.visit_enum(Enum::new(self))?;
-        //     // Parse the matching close brace.
-        //     if self.next_char()? == '}' {
-        //         Ok(value)
-        //     } else {
-        //         Err(Error::ExpectedMapEnd)
-        //     }
-        // } else {
-        //     Err(Error::ExpectedEnum)
-        // }
-        todo!()
+        match self.peek_type()? {
+            OPA_STRING => visitor.visit_enum(self.parse_string()?.into_deserializer()),
+            OPA_OBJECT => visitor.visit_enum(EnumAccess::new(self)),
+            ty => Err(Error::ExpectedEnum(ty as u8)),
+        }
     }
 
     // An identifier in Serde is the type that identifies a field of a struct or
@@ -468,6 +445,17 @@ struct ArrayAccess<'a, 'de: 'a> {
     elems: ValueAddr,
 }
 
+impl<'a, 'de> ArrayAccess<'a, 'de> {
+    fn new(de: &'a mut Deserializer<'de>, array: &opa_array_t) -> Self {
+        ArrayAccess {
+            de,
+            n: 0,
+            len: array.len as usize,
+            elems: ValueAddr(array.elems as i32),
+        }
+    }
+}
+
 impl<'de, 'a> de::SeqAccess<'de> for ArrayAccess<'a, 'de> {
     type Error = Error;
 
@@ -494,6 +482,17 @@ impl<'de, 'a> de::SeqAccess<'de> for ArrayAccess<'a, 'de> {
 struct ObjectAccess<'a, 'de: 'a> {
     de: &'a mut Deserializer<'de>,
     next: Option<ValueAddr>,
+}
+
+impl<'a, 'de> ObjectAccess<'a, 'de> {
+    fn new(de: &'a mut Deserializer<'de>, map: &opa_object_t) -> Self {
+        let next = if map.head == 0 {
+            None
+        } else {
+            Some(ValueAddr(map.head as i32))
+        };
+        ObjectAccess { de, next }
+    }
 }
 
 impl<'de, 'a> de::MapAccess<'de> for ObjectAccess<'a, 'de> {
@@ -537,6 +536,79 @@ impl<'de, 'a> de::MapAccess<'de> for ObjectAccess<'a, 'de> {
         } else {
             Err(Error::ExpectedNextAddr)
         }
+    }
+}
+
+struct EnumAccess<'a, 'de: 'a> {
+    de: &'a mut Deserializer<'de>,
+}
+
+impl<'a, 'de> EnumAccess<'a, 'de> {
+    fn new(de: &'a mut Deserializer<'de>) -> Self {
+        EnumAccess { de }
+    }
+}
+
+impl<'de, 'a> de::EnumAccess<'de> for EnumAccess<'a, 'de> {
+    type Error = Error;
+    type Variant = Self;
+
+    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant)>
+    where
+        V: de::DeserializeSeed<'de>,
+    {
+        // we are looking at a map
+        // read the first key
+        let ty = self.de.peek_type()?;
+        if ty != OPA_OBJECT {
+            return Err(Error::ExpectedObject(ty as u8));
+        }
+
+        let object = self
+            .de
+            .instance
+            .memory()
+            .as_type::<opa_object_t>(self.de.addr)?;
+        let elem = self
+            .de
+            .instance
+            .memory()
+            .as_type::<opa_object_elem_t>(ValueAddr(object.head as i32))?;
+        self.de.addr = ValueAddr(elem.k as i32);
+        let val = seed.deserialize(&mut *self.de)?;
+        self.de.addr = ValueAddr(elem.v as i32);
+        Ok((val, self))
+    }
+}
+
+impl<'de, 'a> de::VariantAccess<'de> for EnumAccess<'a, 'de> {
+    type Error = Error;
+
+    fn unit_variant(self) -> Result<()> {
+        // If the `Visitor` expected this variant to be a unit variant, the input
+        // should have been the plain string case handled in `deserialize_enum`.
+        Err(Error::ExpectedString(0))
+    }
+
+    fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value>
+    where
+        T: de::DeserializeSeed<'de>,
+    {
+        seed.deserialize(self.de)
+    }
+
+    fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        de::Deserializer::deserialize_seq(self.de, visitor)
+    }
+
+    fn struct_variant<V>(self, _fields: &'static [&'static str], visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        de::Deserializer::deserialize_map(self.de, visitor)
     }
 }
 
@@ -615,12 +687,30 @@ mod tests {
     type_roundtrip!(test_deserialize_char, char, 'a');
     type_roundtrip!(test_deserialize_none, Option<i64>, Option::<i64>::None);
     type_roundtrip!(test_deserialize_some, Option<i64>, Some(56));
-    // type_roundtrip!(test_deserialize_unit, (), ())
     type_roundtrip!(test_deserialize_unit_struct, UnitStruct, UnitStruct);
     type_roundtrip!(
         test_deserialize_newtype_struct,
         NewTypeStruct,
         NewTypeStruct(56)
+    );
+    type_roundtrip!(test_deserialize_unit_variant, TestEnum, TestEnum::Unit);
+    type_roundtrip!(
+        test_deserialize_newtype_variant,
+        TestEnum,
+        TestEnum::NewType(64)
+    );
+    type_roundtrip!(
+        test_deserialize_tuple_variant,
+        TestEnum,
+        TestEnum::Tuple(64, "Hello".to_string())
+    );
+    type_roundtrip!(
+        test_deserialize_struct_variant,
+        TestEnum,
+        TestEnum::Struct {
+            age: 64,
+            msg: "Hello".to_string()
+        }
     );
 
     type_roundtrip!(
@@ -681,6 +771,18 @@ mod tests {
             let addr = to_instance(instance.clone(), &person).unwrap();
             let loaded = from_instance(addr, &instance).unwrap();
             assert_eq!(person, loaded);
+        })
+    }
+
+    #[test]
+    fn test_deserialize_unit() {
+        EMPTY_MODULE.with(|module| {
+            let memory = Memory::from_module(module);
+            let instance = Instance::new(module, memory).unwrap();
+            let input = ();
+            let addr = to_instance(instance.clone(), &input).unwrap();
+            let loaded = from_instance(addr, &instance).unwrap();
+            assert_eq!(input, loaded);
         })
     }
 }

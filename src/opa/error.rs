@@ -15,6 +15,8 @@ pub enum Error {
     MemSet,
     #[error("Expected sequence length. Serializer does not support serializing sequences without lengths.")]
     ExpectedSeqLen,
+    #[error("Unexpected null pointer.")]
+    NullPtr,
     #[error("Invalid serialized length. Expected len {0}, serialized {1}")]
     InvalidSeqLen(usize, usize),
     #[error("Invalid buffer length when casting to struct. Expected {0}, got {1}.")]
@@ -43,8 +45,14 @@ pub enum Error {
     ExpectedArray(u8),
     #[error("Expected object value. Found type {0}")]
     ExpectedObject(u8),
+    #[error("Expected enum value. Found type {0}")]
+    ExpectedEnum(u8),
     #[error("Expected next address when parsing object element value")]
     ExpectedNextAddr,
+    #[error("Expected entry key when parsing enum.")]
+    ExpectedKey,
+    #[error("Expected entry value when parsing enum.")]
+    ExpectedValue,
 }
 
 impl ser::Error for Error {
