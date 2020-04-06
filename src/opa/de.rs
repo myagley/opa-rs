@@ -18,16 +18,16 @@ pub struct Deserializer<'de> {
 }
 
 impl<'de> Deserializer<'de> {
-    pub fn from_instance(addr: ValueAddr, instance: &'de Instance) -> Self {
+    pub fn from_instance(instance: &'de Instance, addr: ValueAddr) -> Self {
         Self { instance, addr }
     }
 }
 
-pub fn from_instance<T>(addr: ValueAddr, instance: &Instance) -> Result<T>
+pub fn from_instance<T>(instance: &Instance, addr: ValueAddr) -> Result<T>
 where
     T: de::DeserializeOwned,
 {
-    let mut deserializer = Deserializer::from_instance(addr, instance);
+    let mut deserializer = Deserializer::from_instance(instance, addr);
     let t = T::deserialize(&mut deserializer)?;
     Ok(t)
 }
@@ -664,7 +664,7 @@ mod tests {
                     let memory = Memory::from_module(module);
                     let instance = Instance::new(module, memory).unwrap();
                     let addr = to_instance(instance.clone(), &$input).unwrap();
-                    let loaded = from_instance::<$ty>(addr, &instance).unwrap();
+                    let loaded = from_instance::<$ty>(&instance, addr).unwrap();
                     assert_eq!($input, loaded);
                 })
             }
@@ -738,7 +738,7 @@ mod tests {
             input.insert("key1".to_string(), 3);
             input.insert("key2".to_string(), 2);
             let addr = to_instance(instance.clone(), &input).unwrap();
-            let loaded = from_instance(addr, &instance).unwrap();
+            let loaded = from_instance(&instance, addr).unwrap();
             assert_eq!(input, loaded);
         })
     }
@@ -750,7 +750,7 @@ mod tests {
             let instance = Instance::new(module, memory).unwrap();
             let input: HashMap<String, i64> = HashMap::new();
             let addr = to_instance(instance.clone(), &input).unwrap();
-            let loaded = from_instance(addr, &instance).unwrap();
+            let loaded = from_instance(&instance, addr).unwrap();
             assert_eq!(input, loaded);
         })
     }
@@ -769,7 +769,7 @@ mod tests {
                 properties,
             };
             let addr = to_instance(instance.clone(), &person).unwrap();
-            let loaded = from_instance(addr, &instance).unwrap();
+            let loaded = from_instance(&instance, addr).unwrap();
             assert_eq!(person, loaded);
         })
     }
@@ -781,7 +781,7 @@ mod tests {
             let instance = Instance::new(module, memory).unwrap();
             let input = ();
             let addr = to_instance(instance.clone(), &input).unwrap();
-            let loaded = from_instance(addr, &instance).unwrap();
+            let loaded = from_instance(&instance, addr).unwrap();
             assert_eq!(input, loaded);
         })
     }
