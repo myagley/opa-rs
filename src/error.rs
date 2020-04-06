@@ -7,7 +7,7 @@ use thiserror::Error;
 #[cfg(target_arch = "x86_64")]
 use wasmtime::Trap;
 
-use crate::{opa, Value, ValueAddr};
+use crate::{opa, Value};
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -28,8 +28,6 @@ pub enum Error {
         #[from]
         Trap,
     ),
-    #[error("Failed to parse json at addr \"{0}\".")]
-    JsonParse(ValueAddr),
     #[error("Failed to create CStr.")]
     CStr(#[source] Utf8Error),
     #[error("Failed to open a directory.")]
@@ -46,10 +44,6 @@ pub enum Error {
     DeserializeValue(String),
     #[error("Failed to serialize: {0}")]
     SerializeValue(String),
-    #[error("Failed to deserialize JSON.")]
-    DeserializeJson(#[source] serde_json::Error),
-    #[error("Failed to serialize JSON.")]
-    SerializeJson(#[source] serde_json::Error),
     #[error("Invalid type in builtin function: expected {0}, got {1:?}")]
     InvalidType(&'static str, Value),
     #[error("Invalid type conversion in builtin function: expected {0}")]

@@ -86,17 +86,4 @@ impl Functions {
         let addr = self.inner.opa_malloc(len as i32)?;
         Ok(addr.into())
     }
-
-    pub fn json_parse(&self, addr: ValueAddr, len: usize) -> Result<ValueAddr, Error> {
-        let parsed_addr = self.inner.opa_json_parse(addr.0, len as i32)?;
-        if parsed_addr == 0 {
-            return Err(Error::JsonParse(addr));
-        }
-        Ok(parsed_addr.into())
-    }
-
-    pub fn json_dump(&self, addr: ValueAddr) -> Result<ValueAddr, Error> {
-        let raw_addr = self.inner.opa_json_dump(addr.0)?;
-        Ok(raw_addr.into())
-    }
 }

@@ -60,6 +60,8 @@ as_bytes!(opa_array_t);
 as_bytes!(opa_array_elem_t);
 as_bytes!(opa_object_t);
 as_bytes!(opa_object_elem_t);
+as_bytes!(opa_set_t);
+as_bytes!(opa_set_elem_t);
 
 impl AsBytes for [u8] {
     fn as_bytes(&self) -> &[u8] {
@@ -155,6 +157,8 @@ unsafe impl FromBytes for opa_array_t {}
 unsafe impl FromBytes for opa_array_elem_t {}
 unsafe impl FromBytes for opa_object_t {}
 unsafe impl FromBytes for opa_object_elem_t {}
+unsafe impl FromBytes for opa_set_t {}
+unsafe impl FromBytes for opa_set_elem_t {}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
@@ -314,9 +318,48 @@ pub struct opa_set_t {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    use std::fs;
     use std::mem;
 
+    use serde::{Deserialize, Serialize};
+
+    use crate::opa::to_instance;
+    use crate::wasm::{Instance, Memory, Module};
+
     use super::*;
+
+    thread_local! {
+        static EMPTY_MODULE: Module = {
+            let bytes = fs::read("tests/empty.wasm").unwrap();
+            let module = Module::from_bytes(bytes).unwrap();
+            module
+        };
+    }
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct UnitStruct;
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct NewTypeStruct(i64);
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct TupleStruct(i64, String);
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    enum TestEnum {
+        Unit,
+        NewType(i64),
+        Tuple(i64, String),
+        Struct { age: i64, msg: String },
+    }
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Person {
+        name: String,
+        age: u8,
+        properties: HashMap<String, String>,
+    }
 
     #[test]
     fn test_bool_size() {
@@ -326,5 +369,135 @@ mod tests {
     #[test]
     fn test_number_ref_size() {
         assert_eq!(8, mem::size_of::<opa_number_ref_t>());
+    }
+
+    macro_rules! type_roundtrip {
+        ($name:ident, $ty:ty, $input:expr) => {
+            #[test]
+            fn $name() {
+                EMPTY_MODULE.with(|module| {
+                    let memory = Memory::from_module(module);
+                    let instance = Instance::new(module, memory).unwrap();
+                    let addr = to_instance(&instance, &$input).unwrap();
+                    let loaded = from_instance::<$ty>(&instance, addr).unwrap();
+                    assert_eq!($input, loaded);
+                })
+            }
+        };
+    }
+
+    type_roundtrip!(test_roundtrip_bool, bool, true);
+    type_roundtrip!(test_roundtrip_i8, i8, 42_i8);
+    type_roundtrip!(test_roundtrip_i16, i16, 42_i16);
+    type_roundtrip!(test_roundtrip_i32, i32, 42_i32);
+    type_roundtrip!(test_roundtrip_i64, i64, 42_i64);
+    type_roundtrip!(test_roundtrip_u8, u8, 42_u8);
+    type_roundtrip!(test_roundtrip_u16, u16, 42_u16);
+    type_roundtrip!(test_roundtrip_u32, u32, 42_u32);
+    type_roundtrip!(test_roundtrip_u64, u64, 42_u64);
+    type_roundtrip!(test_roundtrip_f32, f32, 1.234_f32);
+    type_roundtrip!(test_roundtrip_f64, f64, 1.234_f64);
+
+    type_roundtrip!(test_roundtrip_string, String, "hello there".to_string());
+    type_roundtrip!(test_roundtrip_char, char, 'a');
+    type_roundtrip!(test_roundtrip_none, Option<i64>, Option::<i64>::None);
+    type_roundtrip!(test_roundtrip_some, Option<i64>, Some(56));
+    type_roundtrip!(test_roundtrip_unit_struct, UnitStruct, UnitStruct);
+    type_roundtrip!(
+        test_roundtrip_newtype_struct,
+        NewTypeStruct,
+        NewTypeStruct(56)
+    );
+    type_roundtrip!(test_roundtrip_unit_variant, TestEnum, TestEnum::Unit);
+    type_roundtrip!(
+        test_roundtrip_newtype_variant,
+        TestEnum,
+        TestEnum::NewType(64)
+    );
+    type_roundtrip!(
+        test_roundtrip_tuple_variant,
+        TestEnum,
+        TestEnum::Tuple(64, "Hello".to_string())
+    );
+    type_roundtrip!(
+        test_roundtrip_struct_variant,
+        TestEnum,
+        TestEnum::Struct {
+            age: 64,
+            msg: "Hello".to_string()
+        }
+    );
+
+    type_roundtrip!(
+        test_roundtrip_vec,
+        Vec<String>,
+        vec!["hello".to_string(), "there".to_string()]
+    );
+    type_roundtrip!(
+        test_roundtrip_tuple,
+        (i64, String),
+        (42, "hello".to_string())
+    );
+    type_roundtrip!(
+        test_roundtrip_tuple_struct,
+        TupleStruct,
+        TupleStruct(42, "hello".to_string())
+    );
+
+    #[test]
+    fn test_roundtrip_map() {
+        EMPTY_MODULE.with(|module| {
+            let memory = Memory::from_module(module);
+            let instance = Instance::new(module, memory).unwrap();
+            let mut input = HashMap::new();
+            input.insert("key1".to_string(), 3);
+            input.insert("key2".to_string(), 2);
+            let addr = to_instance(&instance, &input).unwrap();
+            let loaded = from_instance(&instance, addr).unwrap();
+            assert_eq!(input, loaded);
+        })
+    }
+
+    #[test]
+    fn test_roundtrip_empty_map() {
+        EMPTY_MODULE.with(|module| {
+            let memory = Memory::from_module(module);
+            let instance = Instance::new(module, memory).unwrap();
+            let input: HashMap<String, i64> = HashMap::new();
+            let addr = to_instance(&instance, &input).unwrap();
+            let loaded = from_instance(&instance, addr).unwrap();
+            assert_eq!(input, loaded);
+        })
+    }
+
+    #[test]
+    fn test_roundtrip_struct() {
+        EMPTY_MODULE.with(|module| {
+            let memory = Memory::from_module(module);
+            let instance = Instance::new(module, memory).unwrap();
+            let mut properties = HashMap::new();
+            properties.insert("height".to_string(), "50".to_string());
+            properties.insert("mood".to_string(), "happy".to_string());
+            let person = Person {
+                name: "thename".to_string(),
+                age: 42,
+                properties,
+            };
+            let addr = to_instance(&instance, &person).unwrap();
+            let loaded = from_instance(&instance, addr).unwrap();
+            assert_eq!(person, loaded);
+        })
+    }
+
+    #[test]
+    fn test_roundtrip_unit() {
+        EMPTY_MODULE.with(|module| {
+            let memory = Memory::from_module(module);
+            let instance = Instance::new(module, memory).unwrap();
+            let input = ();
+            let addr = to_instance(&instance, &input).unwrap();
+            let loaded = from_instance(&instance, addr).unwrap();
+            assert_eq!(input, loaded);
+        })
     }
 }
