@@ -137,6 +137,7 @@ impl Policy {
         Ok(())
     }
 
+    // TODO: add proper parsing here
     // pub fn builtins(&mut self) -> Result<String, Error> {
     //     let addr = self.instance.functions().builtins()?;
     //     let s = dump_json(&self.instance, addr)?;

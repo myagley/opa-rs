@@ -34,10 +34,12 @@ where
 
 impl<'de> Deserializer<'de> {
     fn peek_type(&self) -> Result<c_uchar> {
-        self.instance
+        let c = self
+            .instance
             .memory()
-            .as_type::<opa_value>(self.addr)
-            .map(|r| r.ty)
+            .get::<opa_value>(self.addr)
+            .map(|r| r.ty)?;
+        Ok(c)
     }
 
     fn parse_bool(&self) -> Result<bool> {
@@ -46,7 +48,7 @@ impl<'de> Deserializer<'de> {
             return Err(Error::ExpectedBoolean(ty as u8));
         }
 
-        let b = self.instance.memory().as_type::<opa_boolean_t>(self.addr)?;
+        let b = self.instance.memory().get::<opa_boolean_t>(self.addr)?;
         if b.v == 0 {
             Ok(false)
         } else {
@@ -64,7 +66,7 @@ impl<'de> Deserializer<'de> {
             return Err(Error::ExpectedNumber(ty as u8));
         }
 
-        let n = self.instance.memory().as_type::<opa_number_t>(self.addr)?;
+        let n = self.instance.memory().get::<opa_number_t>(self.addr)?;
         if n.repr != OPA_NUMBER_REPR_INT {
             return Err(Error::ExpectedInteger(n.repr as u8));
         }
@@ -79,7 +81,7 @@ impl<'de> Deserializer<'de> {
             return Err(Error::ExpectedNumber(ty as u8));
         }
 
-        let n = self.instance.memory().as_type::<opa_number_t>(self.addr)?;
+        let n = self.instance.memory().get::<opa_number_t>(self.addr)?;
         if n.repr != OPA_NUMBER_REPR_FLOAT {
             return Err(Error::ExpectedFloat(n.repr as u8));
         }
@@ -88,18 +90,15 @@ impl<'de> Deserializer<'de> {
         Ok(f)
     }
 
-    fn parse_string(&self) -> Result<&str> {
+    fn parse_string(&self) -> Result<String> {
         let ty = self.peek_type()?;
         if ty != OPA_STRING {
             return Err(Error::ExpectedString(ty as u8));
         }
-        let s = self.instance.memory().as_type::<opa_string_t>(self.addr)?;
-        let s = unsafe {
-            let start = s.v as usize;
-            let end = start + s.len as usize;
-            let slice = &self.instance.memory().data_unchecked()[start..end];
-            str::from_utf8(slice).map_err(Error::InvalidUtf8)?
-        };
+        let s = self.instance.memory().get::<opa_string_t>(self.addr)?;
+        let len = s.len as usize;
+        let bytes = self.instance.memory().get_bytes(s.v.into(), len)?;
+        let s = String::from_utf8(bytes).map_err(Error::InvalidUtf8)?;
         Ok(s)
     }
 }
@@ -238,7 +237,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        visitor.visit_str(self.parse_string()?)
+        visitor.visit_str(self.parse_string()?.as_str())
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
@@ -323,12 +322,12 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         match self.peek_type()? {
             OPA_ARRAY => {
-                let array = self.instance.memory().as_type::<opa_array_t>(self.addr)?;
+                let array = self.instance.memory().get::<opa_array_t>(self.addr)?;
                 let access = ArrayAccess::new(self, &array);
                 visitor.visit_seq(access)
             }
             OPA_SET => {
-                let set = self.instance.memory().as_type::<opa_set_t>(self.addr)?;
+                let set = self.instance.memory().get::<opa_set_t>(self.addr)?;
                 let access = SetAccess::new(self, &set);
                 visitor.visit_seq(access)
             }
@@ -374,7 +373,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
             return Err(Error::ExpectedObject(ty as u8));
         }
 
-        let object = self.instance.memory().as_type::<opa_object_t>(self.addr)?;
+        let object = self.instance.memory().get::<opa_object_t>(self.addr)?;
         let access = ObjectAccess::new(self, &object);
         visitor.visit_map(access)
     }
@@ -472,11 +471,7 @@ impl<'de, 'a> de::SeqAccess<'de> for ArrayAccess<'a, 'de> {
             return Ok(None);
         }
         let addr = self.elems + self.n * mem::size_of::<opa_array_elem_t>();
-        let elem = self
-            .de
-            .instance
-            .memory()
-            .as_type::<opa_array_elem_t>(addr)?;
+        let elem = self.de.instance.memory().get::<opa_array_elem_t>(addr)?;
 
         self.n = self.n + 1;
         self.de.addr = ValueAddr(elem.v as i32);
@@ -509,11 +504,7 @@ impl<'de, 'a> de::SeqAccess<'de> for SetAccess<'a, 'de> {
         T: de::DeserializeSeed<'de>,
     {
         if let Some(next_addr) = self.next {
-            let elem = self
-                .de
-                .instance
-                .memory()
-                .as_type::<opa_set_elem_t>(next_addr)?;
+            let elem = self.de.instance.memory().get::<opa_set_elem_t>(next_addr)?;
 
             self.next = if elem.next != 0 {
                 Some(elem.next.into())
@@ -557,7 +548,7 @@ impl<'de, 'a> de::MapAccess<'de> for ObjectAccess<'a, 'de> {
                 .de
                 .instance
                 .memory()
-                .as_type::<opa_object_elem_t>(next_addr)?;
+                .get::<opa_object_elem_t>(next_addr)?;
             self.de.addr = ValueAddr(elem.k as i32);
             seed.deserialize(&mut *self.de).map(Some)
         } else {
@@ -574,7 +565,7 @@ impl<'de, 'a> de::MapAccess<'de> for ObjectAccess<'a, 'de> {
                 .de
                 .instance
                 .memory()
-                .as_type::<opa_object_elem_t>(next_addr)?;
+                .get::<opa_object_elem_t>(next_addr)?;
             self.next = if elem.next != 0 {
                 Some(elem.next.into())
             } else {
@@ -618,12 +609,12 @@ impl<'de, 'a> de::EnumAccess<'de> for EnumAccess<'a, 'de> {
             .de
             .instance
             .memory()
-            .as_type::<opa_object_t>(self.de.addr)?;
+            .get::<opa_object_t>(self.de.addr)?;
         let elem = self
             .de
             .instance
             .memory()
-            .as_type::<opa_object_elem_t>(ValueAddr(object.head as i32))?;
+            .get::<opa_object_elem_t>(ValueAddr(object.head as i32))?;
         self.de.addr = ValueAddr(elem.k as i32);
         let val = seed.deserialize(&mut *self.de)?;
         self.de.addr = ValueAddr(elem.v as i32);

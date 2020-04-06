@@ -1,6 +1,4 @@
-use std::ffi::{CStr, CString};
 use std::fmt;
-use std::os::raw::c_char;
 use std::path::Path;
 
 use wasmtime::{Extern, Func, Limits, MemoryType, Store, Trap};
@@ -9,7 +7,7 @@ use crate::builtins::Builtins;
 use crate::error::Error;
 use crate::ValueAddr;
 
-use super::Functions;
+use super::{AsBytes, FromBytes, Functions};
 
 #[derive(Clone)]
 pub struct Instance {
@@ -102,29 +100,25 @@ impl Memory {
         Memory(memory)
     }
 
-    pub fn cstring_at(&self, addr: ValueAddr) -> Result<CString, Error> {
-        let s = unsafe {
-            let p = self.0.data_ptr().offset(addr.0 as isize);
-            CStr::from_ptr(p as *const c_char).to_owned()
-        };
-        Ok(s)
+    pub fn get<T: FromBytes>(&self, addr: ValueAddr) -> Result<T, Error> {
+        let start = addr.0 as usize;
+        let t = unsafe { T::from_bytes(&self.0.data_unchecked()[start..])? };
+        Ok(t)
     }
 
-    pub unsafe fn data_unchecked(&self) -> &[u8] {
-        self.0.data_unchecked()
+    pub fn get_bytes(&self, addr: ValueAddr, len: usize) -> Result<Vec<u8>, Error> {
+        let start = addr.0 as usize;
+        let end = start + len;
+        let t = unsafe { Vec::from(&self.0.data_unchecked()[start..end]) };
+        Ok(t)
     }
 
-    pub unsafe fn data_unchecked_mut(&self) -> &mut [u8] {
-        self.0.data_unchecked_mut()
-    }
-
-    pub fn set(&self, addr: ValueAddr, value: &[u8]) -> Result<(), Error> {
+    pub fn set<T: AsBytes>(&self, addr: ValueAddr, value: &T) -> Result<(), Error> {
+        let bytes = value.as_bytes();
         unsafe {
-            std::ptr::copy_nonoverlapping(
-                value.as_ptr(),
-                self.0.data_ptr().offset(addr.0 as isize),
-                value.len(),
-            );
+            let start = addr.0 as usize;
+            let end = start + bytes.len();
+            self.0.data_unchecked_mut()[start..end].copy_from_slice(bytes);
         }
         Ok(())
     }

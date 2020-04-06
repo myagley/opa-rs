@@ -1,4 +1,3 @@
-use std::str::Utf8Error;
 use std::{fmt, io};
 
 use serde::{de, ser};
@@ -28,8 +27,6 @@ pub enum Error {
         #[from]
         Trap,
     ),
-    #[error("Failed to create CStr.")]
-    CStr(#[source] Utf8Error),
     #[error("Failed to open a directory.")]
     DirOpen(#[source] io::Error),
     #[error("Failed to open a file.")]
@@ -64,6 +61,8 @@ pub enum Error {
     InvalidResult(&'static str),
     #[error("Failed to serialize value to instance.")]
     InstanceSerde(#[source] opa::Error),
+    #[error("Invalid buffer length when casting to struct. Expected {0}, got {1}.")]
+    NotEnoughData(usize, usize),
 }
 
 impl de::Error for Error {

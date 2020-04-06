@@ -1,26 +1,27 @@
-use std::{convert, fmt, num, str};
+use std::error::Error as StdError;
+use std::{convert, fmt, num, string};
 
 use serde::{de, ser};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Clone, Debug, Error, PartialEq)]
+#[derive(Debug, Error)]
 pub enum Error {
     #[error("{0}")]
     Message(String),
+    #[error("General error.")]
+    General(#[source] Box<dyn StdError + Send + Sync>),
     #[error("Failed to alloc memory.")]
-    Alloc,
+    Alloc(#[source] Box<dyn StdError + Send + Sync>),
     #[error("Failed to set memory.")]
-    MemSet,
+    MemSet(#[source] Box<dyn StdError + Send + Sync>),
     #[error("Expected sequence length. Serializer does not support serializing sequences without lengths.")]
     ExpectedSeqLen,
     #[error("Unexpected null pointer.")]
     NullPtr,
     #[error("Invalid serialized length. Expected len {0}, serialized {1}")]
     InvalidSeqLen(usize, usize),
-    #[error("Invalid buffer length when casting to struct. Expected {0}, got {1}.")]
-    NotEnoughData(usize, usize),
     #[error("Unknown type: {0}")]
     UnknownType(u8),
     #[error("Expected boolean value. Found type {0}")]
@@ -36,7 +37,7 @@ pub enum Error {
     #[error("Expected string value. Found type {0}")]
     ExpectedString(u8),
     #[error("Invalid utf8 string.")]
-    InvalidUtf8(#[source] str::Utf8Error),
+    InvalidUtf8(#[source] string::FromUtf8Error),
     #[error("Invalid char. Expected a string of length one.")]
     InvalidChar,
     #[error("Expected null value. Found type {0}")]
@@ -76,5 +77,11 @@ impl From<num::TryFromIntError> for Error {
 impl From<convert::Infallible> for Error {
     fn from(_error: convert::Infallible) -> Error {
         unreachable!()
+    }
+}
+
+impl From<crate::Error> for Error {
+    fn from(error: crate::Error) -> Self {
+        Self::General(Box::new(error))
     }
 }

@@ -1,5 +1,7 @@
-use crate::{Error, ValueAddr};
+use std::mem;
 use std::sync::Arc;
+
+use crate::{Error, ValueAddr};
 
 #[cfg(target_arch = "x86_64")]
 mod wasmtime;
@@ -18,6 +20,51 @@ use self::wasmtime::FunctionsImpl;
 
 #[cfg(not(target_arch = "x86_64"))]
 use self::wasmi::FunctionsImpl;
+
+pub trait AsBytes {
+    fn as_bytes(&self) -> &[u8];
+}
+
+impl AsBytes for [u8] {
+    fn as_bytes(&self) -> &[u8] {
+        &self
+    }
+}
+
+impl<'a> AsBytes for &'a [u8] {
+    fn as_bytes(&self) -> &[u8] {
+        *self
+    }
+}
+
+impl AsBytes for str {
+    fn as_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl<'a> AsBytes for &'a str {
+    fn as_bytes(&self) -> &[u8] {
+        str::as_bytes(&*self)
+    }
+}
+
+pub unsafe trait FromBytes: Sized + Copy {
+    fn len() -> usize {
+        mem::size_of::<Self>()
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
+        if bytes.len() < mem::size_of::<Self>() {
+            return Err(Error::NotEnoughData(mem::size_of::<Self>(), bytes.len()));
+        }
+
+        let bytes_ptr = bytes.as_ptr();
+        let struct_ptr = bytes_ptr as *const Self;
+        let struct_ref = unsafe { *struct_ptr };
+        Ok(struct_ref)
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Functions {

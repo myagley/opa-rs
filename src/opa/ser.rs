@@ -28,26 +28,19 @@ impl<'i> Serializer<'i> {
         self.instance
             .functions()
             .malloc(size)
-            .map_err(|_| Error::Alloc)
+            .map_err(|e| Error::Alloc(Box::new(e)))
     }
 
     fn memset(&self, addr: ValueAddr, bytes: &[u8]) -> Result<()> {
         self.instance
             .memory()
-            .set(addr, bytes)
-            .map_err(|_| Error::MemSet)
+            .set(addr, &bytes)
+            .map_err(|e| Error::MemSet(Box::new(e)))
     }
 
     fn store<T: AsBytes + ?Sized>(&self, value: &T) -> Result<ValueAddr> {
-        let addr = self
-            .instance
-            .functions()
-            .malloc(value.as_bytes().len())
-            .map_err(|_| Error::Alloc)?;
-        self.instance
-            .memory()
-            .set(addr, value.as_bytes())
-            .map_err(|_| Error::MemSet)?;
+        let addr = self.alloc(value.as_bytes().len())?;
+        self.memset(addr, value.as_bytes())?;
         Ok(addr)
     }
 }
@@ -405,10 +398,12 @@ impl<'i, 'a> ser::SerializeTupleVariant for TupleVariantSerializer<'a, 'i> {
     fn end(self) -> Result<ValueAddr> {
         use serde::ser::SerializeSeq;
         let seq_addr = self.seq.end()?;
-        self.instance
+        let mut elem = self
+            .instance
             .memory()
-            .as_type_mut::<opa_object_elem_t>(self.elem_addr)?
-            .v = seq_addr.0 as intptr_t;
+            .get::<opa_object_elem_t>(self.elem_addr)?;
+        elem.v = seq_addr.0 as intptr_t;
+        self.instance.memory().set(self.elem_addr, &elem)?;
         Ok(self.addr)
     }
 }
@@ -470,17 +465,21 @@ impl<'i, 'a> ser::SerializeMap for ObjectSerializer<'a, 'i> {
         let elem_addr = self.ser.store(&self.elem)?;
 
         if self.first {
-            self.ser
+            let mut prev_elem = self
+                .ser
                 .instance
                 .memory()
-                .as_type_mut::<opa_object_t>(self.prev_elem)?
-                .head = elem_addr.0 as intptr_t;
+                .get::<opa_object_t>(self.prev_elem)?;
+            prev_elem.head = elem_addr.0 as intptr_t;
+            self.ser.instance.memory().set(self.prev_elem, &prev_elem)?;
         } else {
-            self.ser
+            let mut prev_elem = self
+                .ser
                 .instance
                 .memory()
-                .as_type_mut::<opa_object_elem_t>(self.prev_elem)?
-                .next = elem_addr.0 as intptr_t;
+                .get::<opa_object_elem_t>(self.prev_elem)?;
+            prev_elem.next = elem_addr.0 as intptr_t;
+            self.ser.instance.memory().set(self.prev_elem, &prev_elem)?;
         }
 
         self.first = false;
@@ -538,10 +537,12 @@ impl<'i, 'a> ser::SerializeStructVariant for StructVariantSerializer<'a, 'i> {
     fn end(self) -> Result<ValueAddr> {
         use serde::ser::SerializeMap;
         let obj_addr = self.obj.end()?;
-        self.instance
+        let mut elem = self
+            .instance
             .memory()
-            .as_type_mut::<opa_object_elem_t>(self.elem_addr)?
-            .v = obj_addr.0 as intptr_t;
+            .get::<opa_object_elem_t>(self.elem_addr)?;
+        elem.v = obj_addr.0 as intptr_t;
+        self.instance.memory().set(self.elem_addr, &elem)?;
         Ok(self.addr)
     }
 }

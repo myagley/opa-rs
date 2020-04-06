@@ -9,7 +9,7 @@ pub use ser::{to_instance, Serializer};
 use std::mem;
 use std::os::raw::*;
 
-use crate::wasm::Memory;
+use crate::wasm::{AsBytes, FromBytes};
 use crate::ValueAddr;
 
 const OPA_NULL: c_uchar = 1;
@@ -31,10 +31,6 @@ const NULL: opa_value = opa_value { ty: OPA_NULL };
 type size_t = c_int;
 #[allow(non_camel_case_types)]
 type intptr_t = c_int;
-
-pub trait AsBytes {
-    fn as_bytes(&self) -> &[u8];
-}
 
 macro_rules! as_bytes {
     ($ty:ty) => {
@@ -62,92 +58,6 @@ as_bytes!(opa_object_t);
 as_bytes!(opa_object_elem_t);
 as_bytes!(opa_set_t);
 as_bytes!(opa_set_elem_t);
-
-impl AsBytes for [u8] {
-    fn as_bytes(&self) -> &[u8] {
-        &self
-    }
-}
-
-impl<'a> AsBytes for &'a [u8] {
-    fn as_bytes(&self) -> &[u8] {
-        *self
-    }
-}
-
-impl AsBytes for str {
-    fn as_bytes(&self) -> &[u8] {
-        self.as_bytes()
-    }
-}
-
-impl<'a> AsBytes for &'a str {
-    fn as_bytes(&self) -> &[u8] {
-        str::as_bytes(&*self)
-    }
-}
-
-pub unsafe trait FromBytes: Sized {
-    fn as_type(bytes: &[u8]) -> Result<&Self> {
-        if bytes.len() < mem::size_of::<Self>() {
-            return Err(Error::NotEnoughData(mem::size_of::<Self>(), bytes.len()));
-        }
-
-        let bytes_ptr = bytes.as_ptr();
-        let struct_ptr = bytes_ptr as *const Self;
-        let struct_ref = unsafe { &*struct_ptr };
-        Ok(struct_ref)
-    }
-
-    fn as_type_mut(bytes: &mut [u8]) -> Result<&mut Self> {
-        if bytes.len() < mem::size_of::<Self>() {
-            return Err(Error::NotEnoughData(mem::size_of::<Self>(), bytes.len()));
-        }
-
-        let bytes_ptr = bytes.as_ptr();
-        let struct_ptr = bytes_ptr as *mut Self;
-        let struct_ref = unsafe { &mut *struct_ptr };
-        Ok(struct_ref)
-    }
-}
-
-trait AsType {
-    fn as_type<T: FromBytes>(&self, addr: ValueAddr) -> Result<&T>;
-
-    fn as_type_mut<T: FromBytes>(&self, addr: ValueAddr) -> Result<&mut T>;
-}
-
-impl AsType for Memory {
-    fn as_type<T: FromBytes>(&self, addr: ValueAddr) -> Result<&T> {
-        if addr.0 == 0 {
-            return Err(Error::NullPtr);
-        }
-
-        let len = mem::size_of::<T>();
-        let start = addr.0 as usize;
-        let end = start + len;
-        let r = unsafe {
-            let bytes = &self.data_unchecked()[start..end];
-            T::as_type(bytes)?
-        };
-        Ok(r)
-    }
-
-    fn as_type_mut<T: FromBytes>(&self, addr: ValueAddr) -> Result<&mut T> {
-        if addr.0 == 0 {
-            return Err(Error::NullPtr);
-        }
-
-        let len = mem::size_of::<T>();
-        let start = addr.0 as usize;
-        let end = start + len;
-        let r = unsafe {
-            let bytes = &mut self.data_unchecked_mut()[start..end];
-            T::as_type_mut(bytes)?
-        };
-        Ok(r)
-    }
-}
 
 unsafe impl FromBytes for opa_value {}
 unsafe impl FromBytes for opa_boolean_t {}
