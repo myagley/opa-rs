@@ -13,7 +13,7 @@ mod wasm;
 use wasm::{Instance, Memory, Module};
 
 pub use error::Error;
-pub use value::{Number, Value};
+pub use value::{Map, Number, Value};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ValueAddr(i32);
@@ -81,13 +81,9 @@ impl Policy {
         let instance = Instance::new(module, memory)?;
 
         // Load initial data
-        let data = "{}";
-        let data_addr = instance.functions().malloc(data.as_bytes().len())?;
-        instance.memory().set(data_addr, data.as_bytes())?;
+        let initial = Value::Object(Map::new());
+        let data_addr = opa::to_instance(&instance, &initial)?;
 
-        let data_addr = instance
-            .functions()
-            .json_parse(data_addr, data.as_bytes().len())?;
         let base_heap_ptr = instance.functions().heap_ptr_get()?;
         let base_heap_top = instance.functions().heap_top_get()?;
         let data_heap_ptr = base_heap_ptr;

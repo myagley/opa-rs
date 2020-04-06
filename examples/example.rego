@@ -3,7 +3,6 @@ package example
 default allow = false                               # unless otherwise defined, allow is false */
 
 allow = true {                                      # allow is true if...
-    t1 := time.now_ns()
     count(violation) == 0                           # there are zero violations.
 }
 
