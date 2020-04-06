@@ -663,7 +663,7 @@ mod tests {
                 EMPTY_MODULE.with(|module| {
                     let memory = Memory::from_module(module);
                     let instance = Instance::new(module, memory).unwrap();
-                    let addr = to_instance(instance.clone(), &$input).unwrap();
+                    let addr = to_instance(&instance, &$input).unwrap();
                     let loaded = from_instance::<$ty>(&instance, addr).unwrap();
                     assert_eq!($input, loaded);
                 })
@@ -737,7 +737,7 @@ mod tests {
             let mut input = HashMap::new();
             input.insert("key1".to_string(), 3);
             input.insert("key2".to_string(), 2);
-            let addr = to_instance(instance.clone(), &input).unwrap();
+            let addr = to_instance(&instance, &input).unwrap();
             let loaded = from_instance(&instance, addr).unwrap();
             assert_eq!(input, loaded);
         })
@@ -749,7 +749,7 @@ mod tests {
             let memory = Memory::from_module(module);
             let instance = Instance::new(module, memory).unwrap();
             let input: HashMap<String, i64> = HashMap::new();
-            let addr = to_instance(instance.clone(), &input).unwrap();
+            let addr = to_instance(&instance, &input).unwrap();
             let loaded = from_instance(&instance, addr).unwrap();
             assert_eq!(input, loaded);
         })
@@ -768,7 +768,7 @@ mod tests {
                 age: 42,
                 properties,
             };
-            let addr = to_instance(instance.clone(), &person).unwrap();
+            let addr = to_instance(&instance, &person).unwrap();
             let loaded = from_instance(&instance, addr).unwrap();
             assert_eq!(person, loaded);
         })
@@ -780,7 +780,7 @@ mod tests {
             let memory = Memory::from_module(module);
             let instance = Instance::new(module, memory).unwrap();
             let input = ();
-            let addr = to_instance(instance.clone(), &input).unwrap();
+            let addr = to_instance(&instance, &input).unwrap();
             let loaded = from_instance(&instance, addr).unwrap();
             assert_eq!(input, loaded);
         })

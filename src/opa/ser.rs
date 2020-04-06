@@ -10,7 +10,7 @@ use crate::ValueAddr;
 
 use super::*;
 
-pub fn to_instance<T>(instance: Instance, value: &T) -> Result<ValueAddr>
+pub fn to_instance<T>(instance: &Instance, value: &T) -> Result<ValueAddr>
 where
     T: ?Sized + ser::Serialize,
 {
@@ -19,11 +19,11 @@ where
     Ok(addr)
 }
 
-pub struct Serializer {
-    instance: Instance,
+pub struct Serializer<'i> {
+    instance: &'i Instance,
 }
 
-impl Serializer {
+impl<'i> Serializer<'i> {
     fn alloc(&self, size: usize) -> Result<ValueAddr> {
         self.instance
             .functions()
@@ -52,17 +52,17 @@ impl Serializer {
     }
 }
 
-impl<'a> ser::Serializer for &'a mut Serializer {
+impl<'a, 'i> ser::Serializer for &'a mut Serializer<'i> {
     type Ok = ValueAddr;
     type Error = Error;
 
-    type SerializeSeq = ArraySerializer<'a>;
-    type SerializeTuple = ArraySerializer<'a>;
-    type SerializeTupleStruct = ArraySerializer<'a>;
-    type SerializeTupleVariant = TupleVariantSerializer<'a>;
-    type SerializeMap = ObjectSerializer<'a>;
-    type SerializeStruct = ObjectSerializer<'a>;
-    type SerializeStructVariant = StructVariantSerializer<'a>;
+    type SerializeSeq = ArraySerializer<'a, 'i>;
+    type SerializeTuple = ArraySerializer<'a, 'i>;
+    type SerializeTupleStruct = ArraySerializer<'a, 'i>;
+    type SerializeTupleVariant = TupleVariantSerializer<'a, 'i>;
+    type SerializeMap = ObjectSerializer<'a, 'i>;
+    type SerializeStruct = ObjectSerializer<'a, 'i>;
+    type SerializeStructVariant = StructVariantSerializer<'a, 'i>;
 
     fn serialize_bool(self, v: bool) -> Result<ValueAddr> {
         self.store(&opa_boolean_t::new(v))
@@ -294,15 +294,15 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 }
 
-pub struct ArraySerializer<'a> {
-    ser: &'a mut Serializer,
+pub struct ArraySerializer<'a, 'i: 'a> {
+    ser: &'a mut Serializer<'i>,
     count: usize,
     len: usize,
     addr: ValueAddr,
     elems_addr: ValueAddr,
 }
 
-impl<'a> ser::SerializeSeq for ArraySerializer<'a> {
+impl<'i, 'a> ser::SerializeSeq for ArraySerializer<'a, 'i> {
     type Ok = ValueAddr;
 
     type Error = Error;
@@ -341,7 +341,7 @@ impl<'a> ser::SerializeSeq for ArraySerializer<'a> {
 }
 
 // Same thing but for tuples.
-impl<'a> ser::SerializeTuple for ArraySerializer<'a> {
+impl<'i, 'a> ser::SerializeTuple for ArraySerializer<'a, 'i> {
     type Ok = ValueAddr;
     type Error = Error;
 
@@ -358,7 +358,7 @@ impl<'a> ser::SerializeTuple for ArraySerializer<'a> {
 }
 
 // Same thing but for tuple structs
-impl<'a> ser::SerializeTupleStruct for ArraySerializer<'a> {
+impl<'i, 'a> ser::SerializeTupleStruct for ArraySerializer<'a, 'i> {
     type Ok = ValueAddr;
     type Error = Error;
 
@@ -374,9 +374,9 @@ impl<'a> ser::SerializeTupleStruct for ArraySerializer<'a> {
     }
 }
 
-pub struct TupleVariantSerializer<'a> {
+pub struct TupleVariantSerializer<'a, 'i> {
     instance: Instance,
-    seq: ArraySerializer<'a>,
+    seq: ArraySerializer<'a, 'i>,
     addr: ValueAddr,
     elem_addr: ValueAddr,
 }
@@ -390,7 +390,7 @@ pub struct TupleVariantSerializer<'a> {
 //
 // So the `end` method in this impl is responsible for closing both the `]` and
 // the `}`.
-impl<'a> ser::SerializeTupleVariant for TupleVariantSerializer<'a> {
+impl<'i, 'a> ser::SerializeTupleVariant for TupleVariantSerializer<'a, 'i> {
     type Ok = ValueAddr;
     type Error = Error;
 
@@ -413,8 +413,8 @@ impl<'a> ser::SerializeTupleVariant for TupleVariantSerializer<'a> {
     }
 }
 
-pub struct ObjectSerializer<'a> {
-    ser: &'a mut Serializer,
+pub struct ObjectSerializer<'a, 'i: 'a> {
+    ser: &'a mut Serializer<'i>,
     addr: ValueAddr,
     elem: opa_object_elem_t,
     prev_elem: ValueAddr,
@@ -429,7 +429,7 @@ pub struct ObjectSerializer<'a> {
 // `serialize_entry` method allows serializers to optimize for the case where
 // key and value are both available simultaneously. In JSON it doesn't make a
 // difference so the default behavior for `serialize_entry` is fine.
-impl<'a> ser::SerializeMap for ObjectSerializer<'a> {
+impl<'i, 'a> ser::SerializeMap for ObjectSerializer<'a, 'i> {
     type Ok = ValueAddr;
     type Error = Error;
 
@@ -498,7 +498,7 @@ impl<'a> ser::SerializeMap for ObjectSerializer<'a> {
 
 // Structs are like maps in which the keys are constrained to be compile-time
 // constant strings.
-impl<'a> ser::SerializeStruct for ObjectSerializer<'a> {
+impl<'i, 'a> ser::SerializeStruct for ObjectSerializer<'a, 'i> {
     type Ok = ValueAddr;
     type Error = Error;
 
@@ -514,16 +514,16 @@ impl<'a> ser::SerializeStruct for ObjectSerializer<'a> {
     }
 }
 
-pub struct StructVariantSerializer<'a> {
+pub struct StructVariantSerializer<'a, 'i: 'a> {
     instance: Instance,
-    obj: ObjectSerializer<'a>,
+    obj: ObjectSerializer<'a, 'i>,
     addr: ValueAddr,
     elem_addr: ValueAddr,
 }
 
 // Similar to `SerializeTupleVariant`, here the `end` method is responsible for
 // closing both of the curly braces opened by `serialize_struct_variant`.
-impl<'a> ser::SerializeStructVariant for StructVariantSerializer<'a> {
+impl<'i, 'a> ser::SerializeStructVariant for StructVariantSerializer<'a, 'i> {
     type Ok = ValueAddr;
     type Error = Error;
 
@@ -587,7 +587,7 @@ mod tests {
                 EMPTY_MODULE.with(|module| {
                     let memory = Memory::from_module(module);
                     let instance = Instance::new(module, memory).unwrap();
-                    let addr = to_instance(instance.clone(), &$input).unwrap();
+                    let addr = to_instance(&instance, &$input).unwrap();
                     let loaded = dump_json(&instance, addr).unwrap();
                     assert_eq!($expected, loaded);
                 })
@@ -638,7 +638,7 @@ mod tests {
             let mut input = HashMap::new();
             input.insert("key1", 3);
             input.insert("key2", 2);
-            let addr = to_instance(instance.clone(), &input).unwrap();
+            let addr = to_instance(&instance, &input).unwrap();
             let loaded = dump_json(&instance, addr).unwrap();
             let result = serde_json::from_str(&loaded).unwrap();
             assert_eq!(input, result);
@@ -651,7 +651,7 @@ mod tests {
             let memory = Memory::from_module(module);
             let instance = Instance::new(module, memory).unwrap();
             let input: HashMap<String, i64> = HashMap::new();
-            let addr = to_instance(instance.clone(), &input).unwrap();
+            let addr = to_instance(&instance, &input).unwrap();
             let loaded = dump_json(&instance, addr).unwrap();
             let result = serde_json::from_str(&loaded).unwrap();
             assert_eq!(input, result);
@@ -671,7 +671,7 @@ mod tests {
                 age: 42,
                 properties,
             };
-            let addr = to_instance(instance.clone(), &person).unwrap();
+            let addr = to_instance(&instance, &person).unwrap();
             let loaded = dump_json(&instance, addr).unwrap();
             let result = serde_json::from_str(&loaded).unwrap();
             assert_eq!(person, result);
@@ -687,7 +687,7 @@ mod tests {
                 age: 64,
                 msg: "Hello".to_string(),
             };
-            let addr = to_instance(instance.clone(), &variant).unwrap();
+            let addr = to_instance(&instance, &variant).unwrap();
             let loaded = dump_json(&instance, addr).unwrap();
             let result = serde_json::from_str(&loaded).unwrap();
             assert_eq!(variant, result);
