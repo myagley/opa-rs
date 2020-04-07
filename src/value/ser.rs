@@ -1,5 +1,6 @@
 use serde::ser::Serialize;
 
+use crate::opa::Set;
 use crate::value::Value;
 
 impl Serialize for Value {
@@ -22,7 +23,10 @@ impl Serialize for Value {
                 }
                 map.end()
             }
-            Value::Set(ref s) => s.serialize(serializer),
+            Value::Set(ref s) => {
+                let set = Set::new(s);
+                set.serialize(serializer)
+            }
         }
     }
 }

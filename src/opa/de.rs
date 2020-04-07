@@ -322,13 +322,11 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         match self.peek_type()? {
             OPA_ARRAY => {
-                let array = self.instance.memory().get::<opa_array_t>(self.addr)?;
-                let access = ArrayAccess::new(self, &array);
+                let access = ArrayAccess::from_deserializer(self)?;
                 visitor.visit_seq(access)
             }
             OPA_SET => {
-                let set = self.instance.memory().get::<opa_set_t>(self.addr)?;
-                let access = SetAccess::new(self, &set);
+                let access = SetAccess::from_deserializer(self)?;
                 visitor.visit_seq(access)
             }
             ty => return Err(Error::ExpectedArray(ty as u8)),
@@ -373,8 +371,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
             return Err(Error::ExpectedObject(ty as u8));
         }
 
-        let object = self.instance.memory().get::<opa_object_t>(self.addr)?;
-        let access = ObjectAccess::new(self, &object);
+        let access = ObjectAccess::from_deserializer(self)?;
         visitor.visit_map(access)
     }
 
@@ -386,14 +383,18 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     // the fields cannot be known ahead of time is probably a map.
     fn deserialize_struct<V>(
         self,
-        _name: &'static str,
-        _fields: &'static [&'static str],
+        name: &'static str,
+        fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        self.deserialize_map(visitor)
+        if name == set::NAME && fields == [set::FIELD] {
+            visitor.visit_map(SetStructAccess::from_deserializer(self)?)
+        } else {
+            self.deserialize_map(visitor)
+        }
     }
 
     fn deserialize_enum<V>(
@@ -407,7 +408,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         match self.peek_type()? {
             OPA_STRING => visitor.visit_enum(self.parse_string()?.into_deserializer()),
-            OPA_OBJECT => visitor.visit_enum(EnumAccess::new(self)),
+            OPA_OBJECT => visitor.visit_enum(EnumAccess::from_deserializer(self)?),
             ty => Err(Error::ExpectedEnum(ty as u8)),
         }
     }
@@ -450,13 +451,15 @@ struct ArrayAccess<'a, 'de: 'a> {
 }
 
 impl<'a, 'de> ArrayAccess<'a, 'de> {
-    fn new(de: &'a mut Deserializer<'de>, array: &opa_array_t) -> Self {
-        Self {
+    fn from_deserializer(de: &'a mut Deserializer<'de>) -> Result<Self> {
+        let array = de.instance.memory().get::<opa_array_t>(de.addr)?;
+        let access = Self {
             de,
             n: 0,
             len: array.len as usize,
             elems: ValueAddr(array.elems as i32),
-        }
+        };
+        Ok(access)
     }
 }
 
@@ -485,14 +488,16 @@ struct SetAccess<'a, 'de: 'a> {
 }
 
 impl<'a, 'de> SetAccess<'a, 'de> {
-    fn new(de: &'a mut Deserializer<'de>, set: &opa_set_t) -> Self {
+    fn from_deserializer(de: &'a mut Deserializer<'de>) -> Result<Self> {
+        let set = de.instance.memory().get::<opa_set_t>(de.addr)?;
         let next = if set.head == 0 {
             None
         } else {
             Some(ValueAddr(set.head as i32))
         };
 
-        Self { de, next }
+        let access = Self { de, next };
+        Ok(access)
     }
 }
 
@@ -526,13 +531,15 @@ struct ObjectAccess<'a, 'de: 'a> {
 }
 
 impl<'a, 'de> ObjectAccess<'a, 'de> {
-    fn new(de: &'a mut Deserializer<'de>, map: &opa_object_t) -> Self {
-        let next = if map.head == 0 {
+    fn from_deserializer(de: &'a mut Deserializer<'de>) -> Result<Self> {
+        let object = de.instance.memory().get::<opa_object_t>(de.addr)?;
+        let next = if object.head == 0 {
             None
         } else {
-            Some(ValueAddr(map.head as i32))
+            Some(ValueAddr(object.head as i32))
         };
-        ObjectAccess { de, next }
+        let access = ObjectAccess { de, next };
+        Ok(access)
     }
 }
 
@@ -585,8 +592,9 @@ struct EnumAccess<'a, 'de: 'a> {
 }
 
 impl<'a, 'de> EnumAccess<'a, 'de> {
-    fn new(de: &'a mut Deserializer<'de>) -> Self {
-        EnumAccess { de }
+    fn from_deserializer(de: &'a mut Deserializer<'de>) -> Result<Self> {
+        let access = EnumAccess { de };
+        Ok(access)
     }
 }
 
@@ -650,5 +658,86 @@ impl<'de, 'a> de::VariantAccess<'de> for EnumAccess<'a, 'de> {
         V: Visitor<'de>,
     {
         de::Deserializer::deserialize_map(self.de, visitor)
+    }
+}
+
+struct SetStructAccess<'a, 'de: 'a> {
+    de: &'a mut Deserializer<'de>,
+    visited: bool,
+}
+
+impl<'a, 'de> SetStructAccess<'a, 'de> {
+    fn from_deserializer(de: &'a mut Deserializer<'de>) -> Result<Self> {
+        let access = Self { de, visited: false };
+        Ok(access)
+    }
+}
+
+impl<'de, 'a> de::MapAccess<'de> for SetStructAccess<'a, 'de> {
+    type Error = Error;
+
+    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
+    where
+        K: de::DeserializeSeed<'de>,
+    {
+        if self.visited {
+            return Ok(None);
+        }
+        self.visited = true;
+        seed.deserialize(SetFieldDeserializer).map(Some)
+    }
+
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
+    where
+        V: de::DeserializeSeed<'de>,
+    {
+        seed.deserialize(SetValueDeserializer::from_deserializer(self.de)?)
+    }
+}
+
+struct SetValueDeserializer<'a, 'de: 'a> {
+    de: &'a mut Deserializer<'de>,
+}
+
+impl<'a, 'de> SetValueDeserializer<'a, 'de> {
+    fn from_deserializer(de: &'a mut Deserializer<'de>) -> Result<Self> {
+        let deserializer = Self { de };
+        Ok(deserializer)
+    }
+}
+
+impl<'de, 'a> de::Deserializer<'de> for SetValueDeserializer<'a, 'de> {
+    type Error = Error;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        visitor.visit_seq(SetAccess::from_deserializer(self.de)?)
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool u8 u16 u32 u64 i8 i16 i32 i64 f32 f64 char str string seq
+        bytes byte_buf map struct option unit newtype_struct
+        ignored_any unit_struct tuple_struct tuple enum identifier
+    }
+}
+
+struct SetFieldDeserializer;
+
+impl<'de> de::Deserializer<'de> for SetFieldDeserializer {
+    type Error = Error;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        visitor.visit_borrowed_str(set::FIELD)
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool u8 u16 u32 u64 i8 i16 i32 i64 f32 f64 char str string seq
+        bytes byte_buf map struct option unit newtype_struct
+        ignored_any unit_struct tuple_struct tuple enum identifier
     }
 }

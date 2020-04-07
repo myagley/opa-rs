@@ -6,8 +6,15 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 pub const FIELD: &str = "$__opa_private_set";
 pub const NAME: &str = "$__opa_private_Set";
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct Set<T> {
     elements: T,
+}
+
+impl<T> Set<T> {
+    pub fn new(elements: T) -> Self {
+        Self { elements }
+    }
 }
 
 impl<T> Serialize for Set<T>
@@ -50,14 +57,13 @@ where
             where
                 V: serde::de::MapAccess<'de>,
             {
-                let value = visitor.next_key::<SetKey>()?;
-                if value.is_none() {
+                let key = visitor.next_key::<SetKey>()?;
+                if key.is_none() {
                     return Err(serde::de::Error::custom("set key not found"));
                 }
 
-                let t: T = visitor.next_value()?;
-                let s = Set { elements: t };
-                Ok(s)
+                let elements: T = visitor.next_value()?;
+                Ok(Set { elements })
             }
         }
 
@@ -69,7 +75,7 @@ where
 struct SetKey;
 
 impl<'de> Deserialize<'de> for SetKey {
-    fn deserialize<D>(deserializer: D) -> Result<SetKey, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
