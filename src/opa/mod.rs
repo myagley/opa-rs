@@ -1,6 +1,7 @@
 mod de;
 mod error;
 mod ser;
+mod set;
 
 pub use de::{from_instance, Deserializer};
 pub use error::{Error, Result};
@@ -224,6 +225,16 @@ pub struct opa_set_elem_t {
 pub struct opa_set_t {
     pub hdr: opa_value,
     pub head: intptr_t,
+}
+
+impl opa_set_t {
+    pub fn new(head: ValueAddr) -> Self {
+        let hdr = opa_value { ty: OPA_SET };
+        Self {
+            hdr,
+            head: head.0 as i32,
+        }
+    }
 }
 
 #[cfg(test)]

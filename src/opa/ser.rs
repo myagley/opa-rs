@@ -174,17 +174,7 @@ impl<'a, 'i> ser::Serializer for &'a mut Serializer<'i> {
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
         if let Some(len) = len {
-            let elems_addr = self.alloc(len * mem::size_of::<opa_array_elem_t>())?;
-            let array = opa_array_t::new(elems_addr, len);
-            let addr = self.store(&array)?;
-
-            let serializer = ArraySerializer {
-                ser: self,
-                count: 0,
-                len,
-                addr,
-                elems_addr,
-            };
+            let serializer = ArraySerializer::from_serializer(self, len)?;
             Ok(serializer)
         } else {
             Err(Error::ExpectedSeqLen)
@@ -210,46 +200,12 @@ impl<'a, 'i> ser::Serializer for &'a mut Serializer<'i> {
         variant: &'static str,
         len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
-        let instance = self.instance.clone();
-        let variant_addr = variant.serialize(&mut *self)?;
-
-        let elem = opa_object_elem_t {
-            k: variant_addr.0 as intptr_t,
-            v: 0,
-            next: 0,
-        };
-        let elem_addr = self.store(&elem)?;
-
-        let obj = opa_object_t::new(elem_addr);
-        let addr = self.store(&obj)?;
-
-        let seq = self.serialize_seq(Some(len))?;
-
-        let serializer = TupleVariantSerializer {
-            instance,
-            seq,
-            addr,
-            elem_addr,
-        };
+        let serializer = TupleVariantSerializer::from_serializer(self, variant, len)?;
         Ok(serializer)
     }
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
-        let obj = opa_object_t::new(ValueAddr(0));
-        let addr = self.store(&obj)?;
-
-        let elem = opa_object_elem_t {
-            k: 0,
-            v: 0,
-            next: 0,
-        };
-        let serializer = ObjectSerializer {
-            ser: self,
-            addr,
-            elem,
-            prev_elem: addr,
-            first: true,
-        };
+        let serializer = ObjectSerializer::from_serializer(self)?;
         Ok(serializer)
     }
 
@@ -264,25 +220,7 @@ impl<'a, 'i> ser::Serializer for &'a mut Serializer<'i> {
         variant: &'static str,
         len: usize,
     ) -> Result<Self::SerializeStructVariant> {
-        let instance = self.instance.clone();
-        let variant_addr = variant.serialize(&mut *self)?;
-        let elem = opa_object_elem_t {
-            k: variant_addr.0 as intptr_t,
-            v: 0,
-            next: 0,
-        };
-        let elem_addr = self.store(&elem)?;
-
-        let obj = opa_object_t::new(elem_addr);
-        let addr = self.store(&obj)?;
-
-        let obj = self.serialize_map(Some(len))?;
-        let serializer = StructVariantSerializer {
-            instance,
-            obj,
-            addr,
-            elem_addr,
-        };
+        let serializer = StructVariantSerializer::from_serializer(self, variant, len)?;
         Ok(serializer)
     }
 }
@@ -293,6 +231,23 @@ pub struct ArraySerializer<'a, 'i: 'a> {
     len: usize,
     addr: ValueAddr,
     elems_addr: ValueAddr,
+}
+
+impl<'a, 'i: 'a> ArraySerializer<'a, 'i> {
+    pub fn from_serializer(ser: &'a mut Serializer<'i>, len: usize) -> Result<Self> {
+        let elems_addr = ser.alloc(len * mem::size_of::<opa_array_elem_t>())?;
+        let array = opa_array_t::new(elems_addr, len);
+        let addr = ser.store(&array)?;
+
+        let serializer = ArraySerializer {
+            ser,
+            count: 0,
+            len,
+            addr,
+            elems_addr,
+        };
+        Ok(serializer)
+    }
 }
 
 impl<'i, 'a> ser::SerializeSeq for ArraySerializer<'a, 'i> {
@@ -367,11 +322,112 @@ impl<'i, 'a> ser::SerializeTupleStruct for ArraySerializer<'a, 'i> {
     }
 }
 
+pub struct SetSerializer<'a, 'i: 'a> {
+    ser: &'a mut Serializer<'i>,
+    addr: ValueAddr,
+    prev_elem: ValueAddr,
+    first: bool,
+}
+
+impl<'a, 'i: 'a> SetSerializer<'a, 'i> {
+    pub fn from_serializer(ser: &'a mut Serializer<'i>) -> Result<Self> {
+        let obj = opa_set_t::new(ValueAddr(0));
+        let addr = ser.store(&obj)?;
+
+        let serializer = SetSerializer {
+            ser,
+            addr,
+            prev_elem: addr,
+            first: true,
+        };
+        Ok(serializer)
+    }
+}
+
+impl<'i, 'a> ser::SerializeSeq for SetSerializer<'a, 'i> {
+    type Ok = ValueAddr;
+
+    type Error = Error;
+
+    fn serialize_element<T>(&mut self, value: &T) -> Result<()>
+    where
+        T: ?Sized + Serialize,
+    {
+        // store the value
+        let v_addr = value.serialize(&mut *self.ser)?;
+
+        // store the elem
+        let elem = opa_set_elem_t {
+            v: v_addr.0 as intptr_t,
+            next: 0,
+        };
+
+        // store the elem
+        let elem_addr = self.ser.store(&elem)?;
+
+        if self.first {
+            let mut prev_elem = self
+                .ser
+                .instance
+                .memory()
+                .get::<opa_set_t>(self.prev_elem)?;
+            prev_elem.head = elem_addr.0 as intptr_t;
+            self.ser.instance.memory().set(self.prev_elem, &prev_elem)?;
+        } else {
+            let mut prev_elem = self
+                .ser
+                .instance
+                .memory()
+                .get::<opa_set_elem_t>(self.prev_elem)?;
+            prev_elem.next = elem_addr.0 as intptr_t;
+            self.ser.instance.memory().set(self.prev_elem, &prev_elem)?;
+        }
+
+        self.first = false;
+        self.prev_elem = elem_addr;
+        Ok(())
+    }
+
+    fn end(self) -> Result<ValueAddr> {
+        Ok(self.addr)
+    }
+}
+
 pub struct TupleVariantSerializer<'a, 'i> {
-    instance: Instance,
     seq: ArraySerializer<'a, 'i>,
     addr: ValueAddr,
     elem_addr: ValueAddr,
+}
+
+impl<'a, 'i: 'a> TupleVariantSerializer<'a, 'i> {
+    pub fn from_serializer(
+        ser: &'a mut Serializer<'i>,
+        variant: &'static str,
+        len: usize,
+    ) -> Result<Self> {
+        use serde::ser::Serializer;
+
+        let variant_addr = variant.serialize(&mut *ser)?;
+
+        let elem = opa_object_elem_t {
+            k: variant_addr.0 as intptr_t,
+            v: 0,
+            next: 0,
+        };
+        let elem_addr = ser.store(&elem)?;
+
+        let obj = opa_object_t::new(elem_addr);
+        let addr = ser.store(&obj)?;
+
+        let seq = ser.serialize_seq(Some(len))?;
+
+        let serializer = TupleVariantSerializer {
+            seq,
+            addr,
+            elem_addr,
+        };
+        Ok(serializer)
+    }
 }
 
 // Tuple variants are a little different. Refer back to the
@@ -397,13 +453,11 @@ impl<'i, 'a> ser::SerializeTupleVariant for TupleVariantSerializer<'a, 'i> {
 
     fn end(self) -> Result<ValueAddr> {
         use serde::ser::SerializeSeq;
+        let instance = self.seq.ser.instance.clone();
         let seq_addr = self.seq.end()?;
-        let mut elem = self
-            .instance
-            .memory()
-            .get::<opa_object_elem_t>(self.elem_addr)?;
+        let mut elem = instance.memory().get::<opa_object_elem_t>(self.elem_addr)?;
         elem.v = seq_addr.0 as intptr_t;
-        self.instance.memory().set(self.elem_addr, &elem)?;
+        instance.memory().set(self.elem_addr, &elem)?;
         Ok(self.addr)
     }
 }
@@ -414,6 +468,27 @@ pub struct ObjectSerializer<'a, 'i: 'a> {
     elem: opa_object_elem_t,
     prev_elem: ValueAddr,
     first: bool,
+}
+
+impl<'a, 'i: 'a> ObjectSerializer<'a, 'i> {
+    pub fn from_serializer(ser: &'a mut Serializer<'i>) -> Result<Self> {
+        let obj = opa_object_t::new(ValueAddr(0));
+        let addr = ser.store(&obj)?;
+
+        let elem = opa_object_elem_t {
+            k: 0,
+            v: 0,
+            next: 0,
+        };
+        let serializer = ObjectSerializer {
+            ser,
+            addr,
+            elem,
+            prev_elem: addr,
+            first: true,
+        };
+        Ok(serializer)
+    }
 }
 
 // Some `Serialize` types are not able to hold a key and value in memory at the
@@ -514,10 +589,38 @@ impl<'i, 'a> ser::SerializeStruct for ObjectSerializer<'a, 'i> {
 }
 
 pub struct StructVariantSerializer<'a, 'i: 'a> {
-    instance: Instance,
     obj: ObjectSerializer<'a, 'i>,
     addr: ValueAddr,
     elem_addr: ValueAddr,
+}
+
+impl<'a, 'i: 'a> StructVariantSerializer<'a, 'i> {
+    pub fn from_serializer(
+        ser: &'a mut Serializer<'i>,
+        variant: &'static str,
+        len: usize,
+    ) -> Result<Self> {
+        use serde::ser::Serializer;
+
+        let variant_addr = variant.serialize(&mut *ser)?;
+        let elem = opa_object_elem_t {
+            k: variant_addr.0 as intptr_t,
+            v: 0,
+            next: 0,
+        };
+        let elem_addr = ser.store(&elem)?;
+
+        let obj = opa_object_t::new(elem_addr);
+        let addr = ser.store(&obj)?;
+
+        let obj = ser.serialize_map(Some(len))?;
+        let serializer = StructVariantSerializer {
+            obj,
+            addr,
+            elem_addr,
+        };
+        Ok(serializer)
+    }
 }
 
 // Similar to `SerializeTupleVariant`, here the `end` method is responsible for
@@ -536,13 +639,11 @@ impl<'i, 'a> ser::SerializeStructVariant for StructVariantSerializer<'a, 'i> {
 
     fn end(self) -> Result<ValueAddr> {
         use serde::ser::SerializeMap;
+        let instance = self.obj.ser.instance.clone();
         let obj_addr = self.obj.end()?;
-        let mut elem = self
-            .instance
-            .memory()
-            .get::<opa_object_elem_t>(self.elem_addr)?;
+        let mut elem = instance.memory().get::<opa_object_elem_t>(self.elem_addr)?;
         elem.v = obj_addr.0 as intptr_t;
-        self.instance.memory().set(self.elem_addr, &elem)?;
+        instance.memory().set(self.elem_addr, &elem)?;
         Ok(self.addr)
     }
 }

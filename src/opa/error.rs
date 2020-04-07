@@ -54,6 +54,8 @@ pub enum Error {
     ExpectedKey,
     #[error("Expected entry value when parsing enum.")]
     ExpectedValue,
+    #[error("Invalid set found.")]
+    SetInvalid,
 }
 
 impl ser::Error for Error {
