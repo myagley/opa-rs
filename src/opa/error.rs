@@ -56,6 +56,8 @@ pub enum Error {
     ExpectedValue,
     #[error("Invalid set found.")]
     SetInvalid,
+    #[error("Expected field {0}.")]
+    ExpectedField(&'static str),
 }
 
 impl ser::Error for Error {

@@ -54,7 +54,7 @@ impl<'a, 'i> ser::Serializer for &'a mut Serializer<'i> {
     type SerializeTupleStruct = ArraySerializer<'a, 'i>;
     type SerializeTupleVariant = TupleVariantSerializer<'a, 'i>;
     type SerializeMap = ObjectSerializer<'a, 'i>;
-    type SerializeStruct = ObjectSerializer<'a, 'i>;
+    type SerializeStruct = StructSerializer<'a, 'i>;
     type SerializeStructVariant = StructVariantSerializer<'a, 'i>;
 
     fn serialize_bool(self, v: bool) -> Result<ValueAddr> {
@@ -209,8 +209,13 @@ impl<'a, 'i> ser::Serializer for &'a mut Serializer<'i> {
         Ok(serializer)
     }
 
-    fn serialize_struct(self, _name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
-        self.serialize_map(Some(len))
+    fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
+        let serializer = if name == set::NAME {
+            StructSerializer::Set(self, None)
+        } else {
+            StructSerializer::Object(ObjectSerializer::from_serializer(self)?)
+        };
+        Ok(serializer)
     }
 
     fn serialize_struct_variant(
@@ -645,5 +650,210 @@ impl<'i, 'a> ser::SerializeStructVariant for StructVariantSerializer<'a, 'i> {
         elem.v = obj_addr.0 as intptr_t;
         instance.memory().set(self.elem_addr, &elem)?;
         Ok(self.addr)
+    }
+}
+
+pub enum StructSerializer<'a, 'i: 'a> {
+    Set(&'a mut Serializer<'i>, Option<ValueAddr>),
+    Object(ObjectSerializer<'a, 'i>),
+}
+
+impl<'a, 'i> ser::SerializeStruct for StructSerializer<'a, 'i> {
+    type Ok = ValueAddr;
+    type Error = Error;
+
+    fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
+    where
+        T: ?Sized + Serialize,
+    {
+        match *self {
+            StructSerializer::Set(ref mut ser, ref mut a) => {
+                if key == set::FIELD {
+                    let addr = value.serialize(SetEmitter(ser))?;
+                    a.replace(addr);
+                    Ok(())
+                } else {
+                    return Err(Error::SetInvalid);
+                }
+            }
+            StructSerializer::Object(ref mut obj) => {
+                ser::SerializeStruct::serialize_field(obj, key, value)
+            }
+        }
+    }
+
+    fn end(self) -> Result<ValueAddr> {
+        match self {
+            StructSerializer::Set(_s, addr) => addr.ok_or_else(|| Error::ExpectedField(set::FIELD)),
+            StructSerializer::Object(obj) => ser::SerializeStruct::end(obj),
+        }
+    }
+}
+
+struct SetEmitter<'a, 'i: 'a>(&'a mut Serializer<'i>);
+
+impl<'a, 'i> ser::Serializer for SetEmitter<'a, 'i> {
+    type Ok = ValueAddr;
+    type Error = Error;
+
+    type SerializeSeq = SetSerializer<'a, 'i>;
+    type SerializeTuple = ser::Impossible<ValueAddr, Error>;
+    type SerializeTupleStruct = ser::Impossible<ValueAddr, Error>;
+    type SerializeTupleVariant = ser::Impossible<ValueAddr, Error>;
+    type SerializeMap = ser::Impossible<ValueAddr, Error>;
+    type SerializeStruct = ser::Impossible<ValueAddr, Error>;
+    type SerializeStructVariant = ser::Impossible<ValueAddr, Error>;
+
+    fn serialize_bool(self, _v: bool) -> Result<ValueAddr> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_i8(self, _v: i8) -> Result<ValueAddr> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_i16(self, _v: i16) -> Result<ValueAddr> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_i32(self, _v: i32) -> Result<ValueAddr> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_i64(self, _v: i64) -> Result<ValueAddr> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_u8(self, _v: u8) -> Result<ValueAddr> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_u16(self, _v: u16) -> Result<ValueAddr> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_u32(self, _v: u32) -> Result<ValueAddr> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_u64(self, _v: u64) -> Result<ValueAddr> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_f32(self, _v: f32) -> Result<ValueAddr> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_f64(self, _v: f64) -> Result<ValueAddr> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_char(self, _v: char) -> Result<ValueAddr> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_str(self, _v: &str) -> Result<ValueAddr> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_bytes(self, _value: &[u8]) -> Result<ValueAddr> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_none(self) -> Result<ValueAddr> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_some<T: ?Sized>(self, _value: &T) -> Result<ValueAddr>
+    where
+        T: ser::Serialize,
+    {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_unit(self) -> Result<ValueAddr> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<ValueAddr> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_unit_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+    ) -> Result<ValueAddr> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_newtype_struct<T: ?Sized>(
+        self,
+        _name: &'static str,
+        _value: &T,
+    ) -> Result<ValueAddr>
+    where
+        T: ser::Serialize,
+    {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_newtype_variant<T: ?Sized>(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _value: &T,
+    ) -> Result<ValueAddr>
+    where
+        T: ser::Serialize,
+    {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
+        let serializer = SetSerializer::from_serializer(self.0)?;
+        Ok(serializer)
+    }
+
+    fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_tuple_struct(
+        self,
+        _name: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeTupleStruct> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_tuple_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeTupleVariant> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
+        Err(Error::SetInvalid)
+    }
+
+    fn serialize_struct_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeStructVariant> {
+        Err(Error::SetInvalid)
     }
 }
