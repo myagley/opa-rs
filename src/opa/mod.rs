@@ -1,7 +1,7 @@
 mod de;
 mod error;
 mod ser;
-mod set;
+pub(crate) mod set;
 
 pub use de::{from_instance, Deserializer};
 pub use error::{Error, Result};
@@ -249,6 +249,7 @@ mod tests {
     use crate::opa::set::Set;
     use crate::opa::to_instance;
     use crate::wasm::{Instance, Memory, Module};
+    use crate::{value, Value};
 
     use super::*;
 
@@ -433,6 +434,21 @@ mod tests {
             input.insert("key1".to_string());
             input.insert("key2".to_string());
             let input = Set::new(input);
+            let addr = to_instance(&instance, &input).unwrap();
+            let loaded = from_instance(&instance, addr).unwrap();
+            assert_eq!(input, loaded);
+        })
+    }
+
+    #[test]
+    fn test_roundtrip_value_set() {
+        EMPTY_MODULE.with(|module| {
+            let memory = Memory::from_module(module);
+            let instance = Instance::new(module, memory).unwrap();
+            let mut input = value::Set::new();
+            input.insert(Value::String("key1".to_string()));
+            input.insert(Value::String("key2".to_string()));
+            let input = Value::Set(input);
             let addr = to_instance(&instance, &input).unwrap();
             let loaded = from_instance(&instance, addr).unwrap();
             assert_eq!(input, loaded);

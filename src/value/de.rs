@@ -2,6 +2,7 @@ use std::fmt;
 
 use serde::de::{Deserialize, MapAccess, SeqAccess, Visitor};
 
+use crate::opa::set;
 use crate::value::{Map, Value};
 
 impl<'de> Deserialize<'de> for Value {
@@ -76,7 +77,6 @@ impl<'de> Deserialize<'de> for Value {
                 V: SeqAccess<'de>,
             {
                 let mut vec = Vec::new();
-
                 while let Some(elem) = visitor.next_element()? {
                     vec.push(elem);
                 }
@@ -87,11 +87,19 @@ impl<'de> Deserialize<'de> for Value {
             where
                 V: MapAccess<'de>,
             {
-                let mut values = Map::new();
-                while let Some((key, value)) = visitor.next_entry()? {
-                    values.insert(key, value);
-                }
-                Ok(Value::Object(values))
+                let value = match visitor.next_entry()? {
+                    Some((set::FIELD, Value::Array(vec))) => Value::Set(vec.into_iter().collect()),
+                    Some((key, value)) => {
+                        let mut values = Map::new();
+                        values.insert(key.to_string(), value);
+                        while let Some((key, value)) = visitor.next_entry()? {
+                            values.insert(key, value);
+                        }
+                        Value::Object(values)
+                    }
+                    None => Value::Object(Map::new()),
+                };
+                Ok(value)
             }
         }
 

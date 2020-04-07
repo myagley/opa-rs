@@ -120,7 +120,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
             OPA_STRING => self.deserialize_str(visitor),
             OPA_ARRAY => self.deserialize_seq(visitor),
             OPA_OBJECT => self.deserialize_map(visitor),
-            OPA_SET => self.deserialize_seq(visitor),
+            OPA_SET => self.deserialize_struct(set::NAME, &[set::FIELD], visitor),
             t => Err(Error::UnknownType(t as u8)),
         }
     }
