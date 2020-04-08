@@ -156,7 +156,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
             OPA_STRING => self.deserialize_str(visitor),
             OPA_ARRAY => self.deserialize_seq(visitor),
             OPA_OBJECT => self.deserialize_map(visitor),
-            OPA_SET => self.deserialize_struct(set::NAME, &[set::FIELD], visitor),
+            OPA_SET => self.deserialize_struct(set::TOKEN, &[set::TOKEN], visitor),
             t => Err(Error::UnknownType(t as u8)),
         }
     }
@@ -426,7 +426,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        if name == set::NAME && fields == [set::FIELD] {
+        if name == set::TOKEN && fields == [set::TOKEN] {
             visitor.visit_map(SetStructAccess::from_deserializer(self)?)
         } else {
             self.deserialize_map(visitor)
@@ -768,7 +768,7 @@ impl<'de> de::Deserializer<'de> for SetFieldDeserializer {
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_borrowed_str(set::FIELD)
+        visitor.visit_borrowed_str(set::TOKEN)
     }
 
     serde::forward_to_deserialize_any! {

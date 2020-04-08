@@ -210,7 +210,7 @@ impl<'a, 'i> ser::Serializer for &'a mut Serializer<'i> {
     }
 
     fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
-        let serializer = if name == set::NAME {
+        let serializer = if name == set::TOKEN {
             StructSerializer::Set(self, None)
         } else {
             StructSerializer::Object(ObjectSerializer::from_serializer(self)?)
@@ -668,7 +668,7 @@ impl<'a, 'i> ser::SerializeStruct for StructSerializer<'a, 'i> {
     {
         match *self {
             StructSerializer::Set(ref mut ser, ref mut a) => {
-                if key == set::FIELD {
+                if key == set::TOKEN {
                     let addr = value.serialize(SetEmitter(ser))?;
                     a.replace(addr);
                     Ok(())
@@ -684,7 +684,7 @@ impl<'a, 'i> ser::SerializeStruct for StructSerializer<'a, 'i> {
 
     fn end(self) -> Result<ValueAddr> {
         match self {
-            StructSerializer::Set(_s, addr) => addr.ok_or_else(|| Error::ExpectedField(set::FIELD)),
+            StructSerializer::Set(_s, addr) => addr.ok_or_else(|| Error::ExpectedField(set::TOKEN)),
             StructSerializer::Object(obj) => ser::SerializeStruct::end(obj),
         }
     }

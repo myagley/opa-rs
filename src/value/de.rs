@@ -88,7 +88,7 @@ impl<'de> Deserialize<'de> for Value {
                 V: MapAccess<'de>,
             {
                 let value = match visitor.next_entry()? {
-                    Some((ref key, Value::Array(vec))) if key == set::FIELD => {
+                    Some((ref key, Value::Array(vec))) if key == set::TOKEN => {
                         Value::Set(vec.into_iter().collect())
                     }
                     Some((key, value)) => {

@@ -244,12 +244,13 @@ mod tests {
     use std::fs;
     use std::mem;
 
+    use proptest::prelude::*;
     use serde::{Deserialize, Serialize};
 
     use crate::opa::set::Set;
     use crate::opa::to_instance;
     use crate::wasm::{Instance, Memory, Module};
-    use crate::{value, Value};
+    use crate::{value, Number, Value};
 
     use super::*;
 
@@ -440,6 +441,22 @@ mod tests {
         })
     }
 
+    // Value tests
+    #[test]
+    fn test_roundtrip_value_object() {
+        EMPTY_MODULE.with(|module| {
+            let memory = Memory::from_module(module);
+            let instance = Instance::new(module, memory).unwrap();
+            let mut input = value::Map::new();
+            input.insert("key1".to_string(), Value::Number(3.into()));
+            input.insert("key2".to_string(), Value::Bool(true));
+            let input = Value::Object(input);
+            let addr = to_instance(&instance, &input).unwrap();
+            let loaded = from_instance(&instance, addr).unwrap();
+            assert_eq!(input, loaded);
+        })
+    }
+
     #[test]
     fn test_roundtrip_value_set() {
         EMPTY_MODULE.with(|module| {
@@ -453,5 +470,48 @@ mod tests {
             let loaded = from_instance(&instance, addr).unwrap();
             assert_eq!(input, loaded);
         })
+    }
+
+    fn arb_number() -> impl Strategy<Value = Number> {
+        prop_oneof![
+            prop::num::i64::ANY.prop_map(Number::from),
+            // prop::num::i64::ANY.prop_map(|i| Number::from(i.to_string())),
+            prop::num::f64::ANY.prop_map(Number::from),
+            // prop::num::f64::ANY.prop_map(|f| Number::from(f.to_string())),
+        ]
+    }
+
+    fn arb_value() -> impl Strategy<Value = Value> {
+        let leaf = prop_oneof![
+            Just(Value::Null),
+            any::<bool>().prop_map(Value::Bool),
+            arb_number().prop_map(Value::Number),
+            ".*".prop_map(Value::String),
+        ];
+        leaf.prop_recursive(
+            8,   // 8 levels deep
+            256, // Shoot for maximum size of 256 nodes
+            10,  // We put up to 10 items per collection
+            |inner| {
+                prop_oneof![
+                    prop::collection::vec(inner.clone(), 0..10).prop_map(Value::Array),
+                    prop::collection::btree_map(".*", inner.clone(), 0..10).prop_map(Value::Object),
+                    prop::collection::btree_set(inner.clone(), 0..10).prop_map(Value::Set),
+                ]
+            },
+        )
+    }
+
+    proptest! {
+        #[test]
+        fn test_roundtrip_value(input in arb_value()) {
+            EMPTY_MODULE.with(|module| {
+                let memory = Memory::from_module(module);
+                let instance = Instance::new(module, memory).unwrap();
+                let addr = to_instance(&instance, &input).unwrap();
+                let loaded = from_instance(&instance, addr).unwrap();
+                assert_eq!(input, loaded);
+            })
+        }
     }
 }

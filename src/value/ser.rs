@@ -25,8 +25,8 @@ impl Serialize for Value {
             }
             Value::Set(ref s) => {
                 use serde::ser::SerializeStruct;
-                let mut set = serializer.serialize_struct(opa::set::NAME, 1)?;
-                set.serialize_field(opa::set::FIELD, s)?;
+                let mut set = serializer.serialize_struct(opa::set::TOKEN, 1)?;
+                set.serialize_field(opa::set::TOKEN, s)?;
                 set.end()
             }
         }

@@ -3,8 +3,7 @@ use std::marker::PhantomData;
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-pub const FIELD: &str = "$__opa_private_set";
-pub const NAME: &str = "$__opa_private_Set";
+pub(crate) const TOKEN: &str = "$policy::opa::private::set";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Set<T> {
@@ -27,8 +26,8 @@ where
     {
         use serde::ser::SerializeStruct;
 
-        let mut s = serializer.serialize_struct(NAME, 1)?;
-        s.serialize_field(FIELD, &self.elements)?;
+        let mut s = serializer.serialize_struct(TOKEN, 1)?;
+        s.serialize_field(TOKEN, &self.elements)?;
         s.end()
     }
 }
@@ -67,8 +66,8 @@ where
             }
         }
 
-        static FIELDS: [&str; 1] = [FIELD];
-        deserializer.deserialize_struct(NAME, &FIELDS, SetVisitor(PhantomData::default()))
+        static FIELDS: [&str; 1] = [TOKEN];
+        deserializer.deserialize_struct(TOKEN, &FIELDS, SetVisitor(PhantomData::default()))
     }
 }
 
@@ -92,7 +91,7 @@ impl<'de> Deserialize<'de> for SetKey {
             where
                 E: de::Error,
             {
-                if s == FIELD {
+                if s == TOKEN {
                     Ok(())
                 } else {
                     Err(de::Error::custom("expected field with custom name"))
