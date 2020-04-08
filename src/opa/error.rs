@@ -34,6 +34,8 @@ pub enum Error {
     ExpectedInteger(u8),
     #[error("Expected float value. Found repr {0}")]
     ExpectedFloat(u8),
+    #[error("Expected number ref. Found repr {0}")]
+    ExpectedNumberRef(u8),
     #[error("Invalid number: {0}")]
     InvalidNumber(Number),
     #[error("Invalid number repr. Found repr {0}")]
@@ -62,6 +64,8 @@ pub enum Error {
     ExpectedValue,
     #[error("Invalid set found.")]
     SetInvalid,
+    #[error("Invalid number ref found.")]
+    NumberRefInvalid,
     #[error("Expected field {0}.")]
     ExpectedField(&'static str),
 }

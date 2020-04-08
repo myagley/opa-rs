@@ -7,8 +7,9 @@ use std::str;
 use serde::de::{self, IntoDeserializer, Visitor};
 
 use crate::opa::{Error, Result};
+use crate::value::number;
 use crate::wasm::Instance;
-use crate::{Number, ValueAddr};
+use crate::ValueAddr;
 
 use super::*;
 
@@ -40,6 +41,16 @@ impl<'de> Deserializer<'de> {
             .get::<opa_value>(self.addr)
             .map(|r| r.ty)?;
         Ok(c)
+    }
+
+    fn peek_num_repr(&self) -> Result<c_uchar> {
+        let ty = self.peek_type()?;
+        if ty != OPA_NUMBER {
+            return Err(Error::ExpectedNumber(ty as u8));
+        }
+
+        let n = self.instance.memory().get::<opa_number_t>(self.addr)?;
+        Ok(n.repr)
     }
 
     fn parse_bool(&self) -> Result<bool> {
@@ -90,31 +101,21 @@ impl<'de> Deserializer<'de> {
         Ok(f)
     }
 
-    fn parse_number(&self) -> Result<Number> {
+    fn parse_number_ref(&self) -> Result<String> {
         let ty = self.peek_type()?;
         if ty != OPA_NUMBER {
             return Err(Error::ExpectedNumber(ty as u8));
         }
 
         let n = self.instance.memory().get::<opa_number_t>(self.addr)?;
-        let number = match n.repr {
-            OPA_NUMBER_REPR_INT => {
-                let i = unsafe { n.v.i };
-                Number::from(i)
-            }
-            OPA_NUMBER_REPR_FLOAT => {
-                let f = unsafe { n.v.f };
-                Number::from(f)
-            }
-            OPA_NUMBER_REPR_REF => {
-                let (ptr, len) = unsafe { (n.v.r.s, n.v.r.len) };
-                let bytes = self.instance.memory().get_bytes(ptr.into(), len as usize)?;
-                let s = String::from_utf8(bytes).map_err(Error::InvalidUtf8)?;
-                s.into()
-            }
-            r => return Err(Error::InvalidNumberRepr(r as u8)),
-        };
-        Ok(number)
+        if n.repr != OPA_NUMBER_REPR_REF {
+            return Err(Error::ExpectedNumberRef(n.repr as u8));
+        }
+
+        let (ptr, len) = unsafe { (n.v.r.s, n.v.r.len) };
+        let bytes = self.instance.memory().get_bytes(ptr.into(), len as usize)?;
+        let s = String::from_utf8(bytes).map_err(Error::InvalidUtf8)?;
+        Ok(s)
     }
 
     fn parse_string(&self) -> Result<String> {
@@ -143,16 +144,14 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         match self.peek_type()? {
             OPA_NULL => self.deserialize_unit(visitor),
             OPA_BOOLEAN => self.deserialize_bool(visitor),
-            OPA_NUMBER => {
-                let number = self.parse_number()?;
-                if let Some(i) = number.as_i64() {
-                    visitor.visit_i64(i)
-                } else if let Some(f) = number.as_f64() {
-                    visitor.visit_f64(f)
-                } else {
-                    Err(Error::InvalidNumber(number))
+            OPA_NUMBER => match self.peek_num_repr()? {
+                OPA_NUMBER_REPR_INT => self.deserialize_i64(visitor),
+                OPA_NUMBER_REPR_FLOAT => self.deserialize_f64(visitor),
+                OPA_NUMBER_REPR_REF => {
+                    self.deserialize_struct(number::TOKEN, &[number::TOKEN], visitor)
                 }
-            }
+                r => Err(Error::InvalidNumberRepr(r)),
+            },
             OPA_STRING => self.deserialize_str(visitor),
             OPA_ARRAY => self.deserialize_seq(visitor),
             OPA_OBJECT => self.deserialize_map(visitor),
@@ -428,6 +427,8 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         if name == set::TOKEN && fields == [set::TOKEN] {
             visitor.visit_map(SetStructAccess::from_deserializer(self)?)
+        } else if name == number::TOKEN && fields == [number::TOKEN] {
+            visitor.visit_map(NumberRefStructAccess::from_deserializer(self)?)
         } else {
             self.deserialize_map(visitor)
         }
@@ -775,5 +776,87 @@ impl<'de> de::Deserializer<'de> for SetFieldDeserializer {
         bool u8 u16 u32 u64 i8 i16 i32 i64 f32 f64 char str string seq
         bytes byte_buf map struct option unit newtype_struct
         ignored_any unit_struct tuple_struct tuple enum identifier
+    }
+}
+
+struct NumberRefValueDeserializer<'a, 'de: 'a> {
+    de: &'a mut Deserializer<'de>,
+}
+
+impl<'a, 'de> NumberRefValueDeserializer<'a, 'de> {
+    fn from_deserializer(de: &'a mut Deserializer<'de>) -> Result<Self> {
+        let deserializer = Self { de };
+        Ok(deserializer)
+    }
+}
+
+impl<'de, 'a> de::Deserializer<'de> for NumberRefValueDeserializer<'a, 'de> {
+    type Error = Error;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        let s = self.de.parse_number_ref()?;
+        visitor.visit_string(s)
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool u8 u16 u32 u64 i8 i16 i32 i64 f32 f64 char str string seq
+        bytes byte_buf map struct option unit newtype_struct
+        ignored_any unit_struct tuple_struct tuple enum identifier
+    }
+}
+
+struct NumberRefFieldDeserializer;
+
+impl<'de> de::Deserializer<'de> for NumberRefFieldDeserializer {
+    type Error = Error;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        visitor.visit_borrowed_str(number::TOKEN)
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool u8 u16 u32 u64 i8 i16 i32 i64 f32 f64 char str string seq
+        bytes byte_buf map struct option unit newtype_struct
+        ignored_any unit_struct tuple_struct tuple enum identifier
+    }
+}
+
+struct NumberRefStructAccess<'a, 'de: 'a> {
+    de: &'a mut Deserializer<'de>,
+    visited: bool,
+}
+
+impl<'a, 'de> NumberRefStructAccess<'a, 'de> {
+    fn from_deserializer(de: &'a mut Deserializer<'de>) -> Result<Self> {
+        let access = Self { de, visited: false };
+        Ok(access)
+    }
+}
+
+impl<'de, 'a> de::MapAccess<'de> for NumberRefStructAccess<'a, 'de> {
+    type Error = Error;
+
+    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
+    where
+        K: de::DeserializeSeed<'de>,
+    {
+        if self.visited {
+            return Ok(None);
+        }
+        self.visited = true;
+        seed.deserialize(NumberRefFieldDeserializer).map(Some)
+    }
+
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
+    where
+        V: de::DeserializeSeed<'de>,
+    {
+        seed.deserialize(NumberRefValueDeserializer::from_deserializer(self.de)?)
     }
 }

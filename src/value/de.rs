@@ -3,7 +3,7 @@ use std::fmt;
 use serde::de::{Deserialize, MapAccess, SeqAccess, Visitor};
 
 use crate::opa::set;
-use crate::value::{Map, Value};
+use crate::value::{number, Map, Number, Value};
 
 impl<'de> Deserialize<'de> for Value {
     #[inline]
@@ -90,6 +90,9 @@ impl<'de> Deserialize<'de> for Value {
                 let value = match visitor.next_entry()? {
                     Some((ref key, Value::Array(vec))) if key == set::TOKEN => {
                         Value::Set(vec.into_iter().collect())
+                    }
+                    Some((ref key, Value::String(s))) if key == number::TOKEN => {
+                        Value::Number(Number::from(s))
                     }
                     Some((key, value)) => {
                         let mut values = Map::new();

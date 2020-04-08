@@ -136,6 +136,21 @@ impl opa_number_t {
             v,
         }
     }
+
+    pub fn from_str(s: &str, data: ValueAddr) -> Self {
+        let hdr = opa_value { ty: OPA_NUMBER };
+        let len = s.len() as size_t;
+        let r = opa_number_ref_t {
+            s: data.0 as intptr_t,
+            len,
+        };
+        let v = opa_number_variant_t { r };
+        opa_number_t {
+            hdr,
+            repr: OPA_NUMBER_REPR_REF,
+            v,
+        }
+    }
 }
 
 #[repr(C)]
@@ -475,9 +490,9 @@ mod tests {
     fn arb_number() -> impl Strategy<Value = Number> {
         prop_oneof![
             prop::num::i64::ANY.prop_map(Number::from),
-            // prop::num::i64::ANY.prop_map(|i| Number::from(i.to_string())),
+            prop::num::i64::ANY.prop_map(|i| Number::from(i.to_string())),
             prop::num::f64::ANY.prop_map(Number::from),
-            // prop::num::f64::ANY.prop_map(|f| Number::from(f.to_string())),
+            prop::num::f64::ANY.prop_map(|f| Number::from(f.to_string())),
         ]
     }
 

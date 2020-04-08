@@ -4,7 +4,7 @@ use std::fmt;
 mod de;
 mod from;
 mod index;
-mod number;
+pub(crate) mod number;
 mod ser;
 
 use crate::error::Error;
