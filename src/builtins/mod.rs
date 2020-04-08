@@ -5,7 +5,7 @@ use std::sync::Arc;
 use lazy_static::lazy_static;
 use tracing::{debug, error};
 
-use crate::wasm::Instance;
+use crate::runtime::Instance;
 use crate::{opa, Error, Value, ValueAddr};
 
 mod aggregates;

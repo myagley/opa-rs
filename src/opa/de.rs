@@ -8,7 +8,7 @@ use serde::de::{self, IntoDeserializer, Visitor};
 
 use crate::opa::{Error, Result};
 use crate::value::number;
-use crate::wasm::Instance;
+use crate::runtime::Instance;
 use crate::ValueAddr;
 
 use super::*;

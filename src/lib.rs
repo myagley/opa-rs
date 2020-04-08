@@ -7,10 +7,10 @@ use tempfile::TempDir;
 mod builtins;
 mod error;
 mod opa;
+mod runtime;
 pub mod value;
-mod wasm;
 
-use wasm::{Instance, Memory, Module};
+use runtime::{Instance, Memory, Module};
 
 pub use error::Error;
 pub use value::{Map, Number, Value};

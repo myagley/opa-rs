@@ -6,7 +6,7 @@ use serde::{ser, Serialize};
 
 use crate::opa::{Error, Result};
 use crate::value::number;
-use crate::wasm::Instance;
+use crate::runtime::Instance;
 use crate::ValueAddr;
 
 use super::*;

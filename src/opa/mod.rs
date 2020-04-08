@@ -11,7 +11,7 @@ pub use set::Set;
 use std::mem;
 use std::os::raw::*;
 
-use crate::wasm::{AsBytes, FromBytes};
+use crate::runtime::{AsBytes, FromBytes};
 use crate::ValueAddr;
 
 const OPA_NULL: c_uchar = 1;
@@ -264,7 +264,7 @@ mod tests {
 
     use crate::opa::set::Set;
     use crate::opa::to_instance;
-    use crate::wasm::{Instance, Memory, Module};
+    use crate::runtime::{Instance, Memory, Module};
     use crate::{value, Number, Value};
 
     use super::*;
