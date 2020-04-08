@@ -1,5 +1,7 @@
-use crate::{Error, ValueAddr};
+use std::mem;
 use std::sync::Arc;
+
+use crate::{Error, ValueAddr};
 
 #[cfg(target_arch = "x86_64")]
 mod wasmtime;
@@ -18,6 +20,51 @@ use self::wasmtime::FunctionsImpl;
 
 #[cfg(not(target_arch = "x86_64"))]
 use self::wasmi::FunctionsImpl;
+
+pub trait AsBytes {
+    fn as_bytes(&self) -> &[u8];
+}
+
+impl AsBytes for [u8] {
+    fn as_bytes(&self) -> &[u8] {
+        &self
+    }
+}
+
+impl<'a> AsBytes for &'a [u8] {
+    fn as_bytes(&self) -> &[u8] {
+        *self
+    }
+}
+
+impl AsBytes for str {
+    fn as_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl<'a> AsBytes for &'a str {
+    fn as_bytes(&self) -> &[u8] {
+        str::as_bytes(&*self)
+    }
+}
+
+pub unsafe trait FromBytes: Sized + Copy {
+    fn len() -> usize {
+        mem::size_of::<Self>()
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
+        if bytes.len() < mem::size_of::<Self>() {
+            return Err(Error::NotEnoughData(mem::size_of::<Self>(), bytes.len()));
+        }
+
+        let bytes_ptr = bytes.as_ptr();
+        let struct_ptr = bytes_ptr as *const Self;
+        let struct_ref = unsafe { *struct_ptr };
+        Ok(struct_ref)
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Functions {
@@ -85,18 +132,5 @@ impl Functions {
     pub fn malloc(&self, len: usize) -> Result<ValueAddr, Error> {
         let addr = self.inner.opa_malloc(len as i32)?;
         Ok(addr.into())
-    }
-
-    pub fn json_parse(&self, addr: ValueAddr, len: usize) -> Result<ValueAddr, Error> {
-        let parsed_addr = self.inner.opa_json_parse(addr.0, len as i32)?;
-        if parsed_addr == 0 {
-            return Err(Error::JsonParse(addr));
-        }
-        Ok(parsed_addr.into())
-    }
-
-    pub fn json_dump(&self, addr: ValueAddr) -> Result<ValueAddr, Error> {
-        let raw_addr = self.inner.opa_json_dump(addr.0)?;
-        Ok(raw_addr.into())
     }
 }

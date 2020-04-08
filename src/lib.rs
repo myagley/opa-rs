@@ -1,18 +1,19 @@
 use std::path::Path;
-use std::{fmt, process};
+use std::{fmt, ops, process};
 
 use serde::Serialize;
 use tempfile::TempDir;
 
 mod builtins;
 mod error;
+mod opa;
+mod runtime;
 pub mod value;
-mod wasm;
 
-use wasm::{Instance, Memory, Module};
+use runtime::{Instance, Memory, Module};
 
 pub use error::Error;
-pub use value::{Number, Value};
+pub use value::{Map, Number, Value};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ValueAddr(i32);
@@ -32,6 +33,14 @@ impl From<i32> for ValueAddr {
 impl From<ValueAddr> for i32 {
     fn from(v: ValueAddr) -> Self {
         v.0
+    }
+}
+
+impl ops::Add<usize> for ValueAddr {
+    type Output = ValueAddr;
+
+    fn add(self, rhs: usize) -> Self {
+        ValueAddr(self.0 + rhs as i32)
     }
 }
 
@@ -72,13 +81,9 @@ impl Policy {
         let instance = Instance::new(module, memory)?;
 
         // Load initial data
-        let data = "{}";
-        let data_addr = instance.functions().malloc(data.as_bytes().len())?;
-        instance.memory().set(data_addr, data.as_bytes())?;
+        let initial = Value::Object(Map::new());
+        let data_addr = opa::to_instance(&instance, &initial)?;
 
-        let data_addr = instance
-            .functions()
-            .json_parse(data_addr, data.as_bytes().len())?;
         let base_heap_ptr = instance.functions().heap_ptr_get()?;
         let base_heap_top = instance.functions().heap_top_get()?;
         let data_heap_ptr = base_heap_ptr;
@@ -104,8 +109,7 @@ impl Policy {
         self.instance.functions().heap_top_set(self.data_heap_top)?;
 
         // Load input data
-        let serialized = serde_json::to_string(input).map_err(Error::SerializeJson)?;
-        let input_addr = self.load_json(&serialized)?;
+        let input_addr = opa::to_instance(&self.instance, input)?;
 
         // setup the context
         let ctx_addr = self.instance.functions().eval_ctx_new()?;
@@ -120,52 +124,25 @@ impl Policy {
         self.instance.functions().eval(ctx_addr)?;
 
         let result_addr = self.instance.functions().eval_ctx_get_result(ctx_addr)?;
-        let s = self.dump_json(result_addr)?;
-        let v = serde_json::from_str(&s).map_err(Error::DeserializeJson)?;
+        let v = opa::from_instance(&self.instance, result_addr)?;
         Ok(v)
     }
 
-    pub fn set_data(&mut self, data: &str) -> Result<(), Error> {
+    pub fn set_data<T: Serialize>(&mut self, data: &T) -> Result<(), Error> {
         self.instance.functions().heap_ptr_set(self.base_heap_ptr)?;
         self.instance.functions().heap_top_set(self.base_heap_top)?;
-        self.data_addr = self.load_json(data)?;
+        self.data_addr = opa::to_instance(&self.instance, data)?;
         self.data_heap_ptr = self.instance.functions().heap_ptr_get()?;
         self.data_heap_top = self.instance.functions().heap_top_get()?;
         Ok(())
     }
 
-    pub fn builtins(&mut self) -> Result<String, Error> {
-        let addr = self.instance.functions().builtins()?;
-        let s = dump_json(&self.instance, addr)?;
-        Ok(s)
-    }
-
-    fn load_json(&self, value: &str) -> Result<ValueAddr, Error> {
-        load_json(&self.instance, value)
-    }
-
-    fn dump_json(&self, addr: ValueAddr) -> Result<String, Error> {
-        dump_json(&self.instance, addr)
-    }
-}
-
-pub(crate) fn dump_json(instance: &Instance, addr: ValueAddr) -> Result<String, Error> {
-    let raw_addr = instance.functions().json_dump(addr)?;
-    let s = instance
-        .memory()
-        .cstring_at(raw_addr)?
-        .into_string()
-        .map_err(|e| Error::CStr(e.utf8_error()))?;
-    Ok(s)
-}
-
-pub(crate) fn load_json(instance: &Instance, value: &str) -> Result<ValueAddr, Error> {
-    let raw_addr = instance.functions().malloc(value.as_bytes().len())?;
-    instance.memory().set(raw_addr, value.as_bytes())?;
-    let parsed_addr = instance
-        .functions()
-        .json_parse(raw_addr, value.as_bytes().len())?;
-    Ok(parsed_addr)
+    // TODO: add proper parsing here
+    // pub fn builtins(&mut self) -> Result<String, Error> {
+    //     let addr = self.instance.functions().builtins()?;
+    //     let s = dump_json(&self.instance, addr)?;
+    //     Ok(s)
+    // }
 }
 
 fn abort(_a: i32) {
@@ -174,8 +151,12 @@ fn abort(_a: i32) {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
+    fn test_types() {
+        let mut policy = Policy::from_rego("tests/types.rego", "data.tests.types").unwrap();
+        let result = policy.evaluate(&Value::Null).unwrap();
+        assert_eq!(1, result.as_set().unwrap().len());
     }
 }

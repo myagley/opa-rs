@@ -6,6 +6,8 @@ use serde::{forward_to_deserialize_any, Deserialize, Deserializer, Serialize, Se
 
 use crate::Error;
 
+pub(crate) const TOKEN: &str = "$policy::value::private::Number";
+
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Number {
     n: N,
@@ -155,6 +157,13 @@ macro_rules! impl_from_float {
 
 impl_from_float!(f32, f64);
 
+impl From<String> for Number {
+    fn from(s: String) -> Self {
+        let n = N::Ref(s);
+        Number { n }
+    }
+}
+
 impl Serialize for Number {
     #[inline]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -164,7 +173,12 @@ impl Serialize for Number {
         match self.n {
             N::Int(i) => serializer.serialize_i64(i),
             N::Float(f) => f.serialize(serializer),
-            N::Ref(ref s) => serializer.serialize_str(s),
+            N::Ref(ref n) => {
+                use serde::ser::SerializeStruct;
+                let mut s = serializer.serialize_struct(TOKEN, 1)?;
+                s.serialize_field(TOKEN, n)?;
+                s.end()
+            }
         }
     }
 }
@@ -197,20 +211,85 @@ impl<'de> Deserialize<'de> for Number {
                 Number::from_f64(value).ok_or_else(|| de::Error::custom("not a Rego number"))
             }
 
-            #[inline]
-            fn visit_string<E>(self, value: String) -> Result<Number, E> {
-                let n = N::Ref(value);
-                Ok(Number { n })
-            }
-
-            #[inline]
-            fn visit_str<E>(self, value: &str) -> Result<Number, E> {
-                let n = N::Ref(value.to_owned());
-                Ok(Number { n })
+            fn visit_map<V>(self, mut visitor: V) -> Result<Number, V::Error>
+            where
+                V: de::MapAccess<'de>,
+            {
+                let value = visitor.next_key::<NumberKey>()?;
+                if value.is_none() {
+                    return Err(serde::de::Error::custom("number key not found"));
+                }
+                let v: NumberFromString = visitor.next_value()?;
+                Ok(v.value)
             }
         }
 
         deserializer.deserialize_any(NumberVisitor)
+    }
+}
+
+struct NumberKey;
+
+impl<'de> de::Deserialize<'de> for NumberKey {
+    fn deserialize<D>(deserializer: D) -> Result<NumberKey, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct FieldVisitor;
+
+        impl<'de> de::Visitor<'de> for FieldVisitor {
+            type Value = ();
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a valid number field")
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<(), E>
+            where
+                E: de::Error,
+            {
+                if s == TOKEN {
+                    Ok(())
+                } else {
+                    Err(de::Error::custom("expected field with custom name"))
+                }
+            }
+        }
+
+        deserializer.deserialize_identifier(FieldVisitor)?;
+        Ok(NumberKey)
+    }
+}
+
+pub struct NumberFromString {
+    pub value: Number,
+}
+
+impl<'de> de::Deserialize<'de> for NumberFromString {
+    fn deserialize<D>(deserializer: D) -> Result<NumberFromString, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct Visitor;
+
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = NumberFromString;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("string containing a number")
+            }
+
+            fn visit_string<E>(self, s: String) -> Result<NumberFromString, E>
+            where
+                E: de::Error,
+            {
+                let n = N::Ref(s);
+                let num = Number { n };
+                Ok(NumberFromString { value: num })
+            }
+        }
+
+        deserializer.deserialize_str(Visitor)
     }
 }
 

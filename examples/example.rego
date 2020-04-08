@@ -3,7 +3,10 @@ package example
 default allow = false                               # unless otherwise defined, allow is false */
 
 allow = true {                                      # allow is true if...
-    t1 := time.now_ns()
+    s1 := { 1, 2};
+    s2 := { 1, 3};
+    s3 := s1 | s2;
+    s3 == { 1, 2, 3 }
     count(violation) == 0                           # there are zero violations.
 }
 
@@ -25,4 +28,3 @@ public_server[server] {                             # a server exists in the pub
     input.ports[i].network == input.networks[j].id  # the port references a network in the input.networks collection and...
     input.networks[j].public                        # the network is public.
 }
-

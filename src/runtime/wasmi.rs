@@ -1,6 +1,4 @@
-use std::ffi::{CStr, CString};
 use std::fs;
-use std::os::raw::c_char;
 use std::path::Path;
 
 use wasmi::memory_units::Pages;
@@ -13,7 +11,7 @@ use crate::builtins::Builtins;
 use crate::error::Error;
 use crate::ValueAddr;
 
-use super::Functions;
+use super::{AsBytes, FromBytes, Functions};
 
 const ABORT_FUNC_INDEX: usize = 1;
 const BUILTIN0_FUNC_INDEX: usize = 2;
@@ -286,18 +284,23 @@ impl Memory {
         Memory(memory)
     }
 
-    pub fn cstring_at(&self, addr: ValueAddr) -> Result<CString, Error> {
-        let s = unsafe {
-            self.0.with_direct_access(|mem| {
-                let p = mem.as_ptr().offset(addr.0 as isize);
-                CStr::from_ptr(p as *const c_char).to_owned()
-            })
-        };
-        Ok(s)
+    pub fn get<T: FromBytes>(&self, addr: ValueAddr) -> Result<T, Error> {
+        let start = addr.0 as usize;
+        let t = self
+            .0
+            .with_direct_access(|bytes| T::from_bytes(&bytes[start..]))?;
+        Ok(t)
     }
 
-    pub fn set(&self, addr: ValueAddr, value: &[u8]) -> Result<(), Error> {
-        self.0.set(addr.0 as u32, value).map_err(Error::Wasmi)
+    pub fn get_bytes(&self, addr: ValueAddr, len: usize) -> Result<Vec<u8>, Error> {
+        let start = addr.0 as u32;
+        self.0.get(start, len).map_err(Error::Wasmi)
+    }
+
+    pub fn set<T: AsBytes>(&self, addr: ValueAddr, value: &T) -> Result<(), Error> {
+        self.0
+            .set(addr.0 as u32, value.as_bytes())
+            .map_err(Error::Wasmi)
     }
 }
 
@@ -306,6 +309,10 @@ pub struct Module(wasmi::Module);
 impl Module {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Module, Error> {
         let bytes = fs::read(path).map_err(Error::FileRead)?;
+        Self::from_bytes(bytes)
+    }
+
+    pub fn from_bytes<B: AsRef<[u8]>>(bytes: B) -> Result<Module, Error> {
         let module = wasmi::Module::from_buffer(&bytes).map_err(Error::Wasmi)?;
         Ok(Module(module))
     }

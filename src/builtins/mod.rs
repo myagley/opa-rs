@@ -5,8 +5,8 @@ use std::sync::Arc;
 use lazy_static::lazy_static;
 use tracing::{debug, error};
 
-use crate::wasm::Instance;
-use crate::{dump_json, load_json, Error, Value, ValueAddr};
+use crate::runtime::Instance;
+use crate::{opa, Error, Value, ValueAddr};
 
 mod aggregates;
 mod arrays;
@@ -15,6 +15,7 @@ mod numbers;
 mod objects;
 mod regex;
 mod sets;
+mod strings;
 mod time;
 mod types;
 
@@ -60,18 +61,20 @@ lazy_static! {
 
         b.insert("net.cidr_expand", net::cidr_expand);
 
+        b.insert("upper", strings::upper);
+
         b.insert("time.clock", time::clock);
         b.insert("time.date", time::date);
         b.insert("time.parse_rfc3339_ns", time::parse_rfc3339_ns);
         b.insert("time.weekday", time::weekday);
 
-        b.insert("is_number", types::is_number);
-        b.insert("is_string", types::is_string);
-        b.insert("is_boolean", types::is_boolean);
         b.insert("is_array", types::is_array);
-        b.insert("is_set", types::is_set);
-        b.insert("is_is_object", types::is_object);
+        b.insert("is_boolean", types::is_boolean);
         b.insert("is_null", types::is_null);
+        b.insert("is_number", types::is_number);
+        b.insert("is_object", types::is_object);
+        b.insert("is_set", types::is_set);
+        b.insert("is_string", types::is_string);
         b.insert("type_name", types::type_name);
         b
     };
@@ -186,8 +189,7 @@ struct Inner {
 impl Inner {
     fn new(instance: Instance) -> Result<Self, Error> {
         let builtins_addr = instance.functions().builtins()?;
-        let val: Value = dump_json(&instance, builtins_addr)
-            .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson))?;
+        let val: Value = opa::from_instance(&instance, builtins_addr)?;
 
         let mut lookup = HashMap::new();
         for (k, v) in val.try_into_object()?.into_iter() {
@@ -214,8 +216,7 @@ impl Inner {
         let result = btry!(func());
         debug!(name = %name, arity = 0, result = ?result, "called builtin function.");
 
-        let serialized = btry!(serde_json::to_string(&result));
-        btry!(load_json(&self.instance, &serialized))
+        btry!(opa::to_instance(&self.instance, &result))
     }
 
     fn builtin1(&self, id: i32, _ctx_addr: ValueAddr, value: ValueAddr) -> ValueAddr {
@@ -227,15 +228,13 @@ impl Inner {
             .get(name.as_str())
             .ok_or_else(|| Error::UnknownBuiltin(name.to_string())));
 
-        let val = btry!(dump_json(&self.instance, value)
-            .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
+        let val = btry!(opa::from_instance(&self.instance, value));
 
         debug!(name = %name, arity = 1, arg0 = ?val, "calling builtin function...");
         let result = btry!(func(val));
         debug!(name = %name, arity = 1, result = ?result, "called builtin function.");
 
-        let serialized = btry!(serde_json::to_string(&result));
-        btry!(load_json(&self.instance, &serialized))
+        btry!(opa::to_instance(&self.instance, &result))
     }
 
     fn builtin2(&self, id: i32, _ctx_addr: ValueAddr, a: ValueAddr, b: ValueAddr) -> ValueAddr {
@@ -247,17 +246,14 @@ impl Inner {
             .get(name.as_str())
             .ok_or_else(|| Error::UnknownBuiltin(name.to_string())));
 
-        let val1 = btry!(dump_json(&self.instance, a)
-            .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
-        let val2 = btry!(dump_json(&self.instance, b)
-            .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
+        let val1 = btry!(opa::from_instance(&self.instance, a));
+        let val2 = btry!(opa::from_instance(&self.instance, b));
 
         debug!(name = %name, arity = 2, arg0 = ?val1, arg1 = ?val2, "calling builtin function...");
         let result = btry!(func(val1, val2));
         debug!(name = %name, arity = 2, result = ?result, "called builtin function.");
 
-        let serialized = btry!(serde_json::to_string(&result));
-        btry!(load_json(&self.instance, &serialized))
+        btry!(opa::to_instance(&self.instance, &result))
     }
 
     fn builtin3(
@@ -276,19 +272,15 @@ impl Inner {
             .get(name.as_str())
             .ok_or_else(|| Error::UnknownBuiltin(name.to_string())));
 
-        let val1 = btry!(dump_json(&self.instance, a)
-            .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
-        let val2 = btry!(dump_json(&self.instance, b)
-            .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
-        let val3 = btry!(dump_json(&self.instance, c)
-            .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
+        let val1 = btry!(opa::from_instance(&self.instance, a));
+        let val2 = btry!(opa::from_instance(&self.instance, b));
+        let val3 = btry!(opa::from_instance(&self.instance, c));
 
         debug!(name = %name, arity = 3, arg0 = ?val1, arg1 = ?val2, arg2 = ?val3, "calling builtin function...");
         let result = btry!(func(val1, val2, val3));
         debug!(name = %name, arity = 3, result = ?result, "called builtin function.");
 
-        let serialized = btry!(serde_json::to_string(&result));
-        btry!(load_json(&self.instance, &serialized))
+        btry!(opa::to_instance(&self.instance, &result))
     }
 
     fn builtin4(
@@ -308,21 +300,16 @@ impl Inner {
             .get(name.as_str())
             .ok_or_else(|| Error::UnknownBuiltin(name.to_string())));
 
-        let val1 = btry!(dump_json(&self.instance, a)
-            .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
-        let val2 = btry!(dump_json(&self.instance, b)
-            .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
-        let val3 = btry!(dump_json(&self.instance, c)
-            .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
-        let val4 = btry!(dump_json(&self.instance, d)
-            .and_then(|s| serde_json::from_str(&s).map_err(Error::DeserializeJson)));
+        let val1 = btry!(opa::from_instance(&self.instance, a));
+        let val2 = btry!(opa::from_instance(&self.instance, b));
+        let val3 = btry!(opa::from_instance(&self.instance, c));
+        let val4 = btry!(opa::from_instance(&self.instance, d));
 
         debug!(name = %name, arity = 4, arg0 = ?val1, arg1 = ?val2, arg2 = ?val3, arg3 = ?val4, "calling builtin function...");
         let result = btry!(func(val1, val2, val3, val4));
         debug!(name = %name, arity = 4, result = ?result, "called builtin function.");
 
-        let serialized = btry!(serde_json::to_string(&result));
-        btry!(load_json(&self.instance, &serialized))
+        btry!(opa::to_instance(&self.instance, &result))
     }
 }
 

@@ -29,25 +29,6 @@
       "ports": [
         "p3"
       ]
-    },
-    {
-      "id": "ci",
-      "protocols": [
-        "http"
-      ],
-      "ports": [
-        "p1",
-        "p2"
-      ]
-    },
-    {
-      "id": "busybox",
-      "protocols": [
-        "telnet"
-      ],
-      "ports": [
-        "p1"
-      ]
     }
   ],
   "networks": [
