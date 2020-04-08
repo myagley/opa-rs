@@ -10,12 +10,6 @@ pub struct Set<T> {
     elements: T,
 }
 
-impl<T> Set<T> {
-    pub fn new(elements: T) -> Self {
-        Self { elements }
-    }
-}
-
 impl<T> Serialize for Set<T>
 where
     T: Serialize,
