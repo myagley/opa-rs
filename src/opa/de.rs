@@ -8,7 +8,7 @@ use serde::de::{self, IntoDeserializer, Visitor};
 
 use crate::opa::{Error, Result};
 use crate::wasm::Instance;
-use crate::ValueAddr;
+use crate::{Number, ValueAddr};
 
 use super::*;
 
@@ -90,6 +90,33 @@ impl<'de> Deserializer<'de> {
         Ok(f)
     }
 
+    fn parse_number(&self) -> Result<Number> {
+        let ty = self.peek_type()?;
+        if ty != OPA_NUMBER {
+            return Err(Error::ExpectedNumber(ty as u8));
+        }
+
+        let n = self.instance.memory().get::<opa_number_t>(self.addr)?;
+        let number = match n.repr {
+            OPA_NUMBER_REPR_INT => {
+                let i = unsafe { n.v.i };
+                Number::from(i)
+            }
+            OPA_NUMBER_REPR_FLOAT => {
+                let f = unsafe { n.v.f };
+                Number::from(f)
+            }
+            OPA_NUMBER_REPR_REF => {
+                let (ptr, len) = unsafe { (n.v.r.s, n.v.r.len) };
+                let bytes = self.instance.memory().get_bytes(ptr.into(), len as usize)?;
+                let s = String::from_utf8(bytes).map_err(Error::InvalidUtf8)?;
+                s.into()
+            }
+            r => return Err(Error::InvalidNumberRepr(r as u8)),
+        };
+        Ok(number)
+    }
+
     fn parse_string(&self) -> Result<String> {
         let ty = self.peek_type()?;
         if ty != OPA_STRING {
@@ -116,7 +143,16 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         match self.peek_type()? {
             OPA_NULL => self.deserialize_unit(visitor),
             OPA_BOOLEAN => self.deserialize_bool(visitor),
-            OPA_NUMBER => self.deserialize_i64(visitor),
+            OPA_NUMBER => {
+                let number = self.parse_number()?;
+                if let Some(i) = number.as_i64() {
+                    visitor.visit_i64(i)
+                } else if let Some(f) = number.as_f64() {
+                    visitor.visit_f64(f)
+                } else {
+                    Err(Error::InvalidNumber(number))
+                }
+            }
             OPA_STRING => self.deserialize_str(visitor),
             OPA_ARRAY => self.deserialize_seq(visitor),
             OPA_OBJECT => self.deserialize_map(visitor),

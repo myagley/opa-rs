@@ -24,7 +24,7 @@ const OPA_SET: c_uchar = 7;
 
 const OPA_NUMBER_REPR_INT: c_uchar = 1;
 const OPA_NUMBER_REPR_FLOAT: c_uchar = 2;
-// const OPA_NUMBER_REPR_REF: c_uchar = 3;
+const OPA_NUMBER_REPR_REF: c_uchar = 3;
 
 const NULL: opa_value = opa_value { ty: OPA_NULL };
 

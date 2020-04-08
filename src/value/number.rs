@@ -155,6 +155,13 @@ macro_rules! impl_from_float {
 
 impl_from_float!(f32, f64);
 
+impl From<String> for Number {
+    fn from(s: String) -> Self {
+        let n = N::Ref(s);
+        Number { n }
+    }
+}
+
 impl Serialize for Number {
     #[inline]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

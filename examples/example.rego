@@ -3,6 +3,10 @@ package example
 default allow = false                               # unless otherwise defined, allow is false */
 
 allow = true {                                      # allow is true if...
+    s1 := { 1, 2};
+    s2 := { 1, 3};
+    s3 := s1 | s2;
+    s3 == { 1, 2, 3 }
     count(violation) == 0                           # there are zero violations.
 }
 
