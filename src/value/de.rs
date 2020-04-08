@@ -88,10 +88,12 @@ impl<'de> Deserialize<'de> for Value {
                 V: MapAccess<'de>,
             {
                 let value = match visitor.next_entry()? {
-                    Some((set::FIELD, Value::Array(vec))) => Value::Set(vec.into_iter().collect()),
+                    Some((ref key, Value::Array(vec))) if key == set::FIELD => {
+                        Value::Set(vec.into_iter().collect())
+                    }
                     Some((key, value)) => {
                         let mut values = Map::new();
-                        values.insert(key.to_string(), value);
+                        values.insert(key, value);
                         while let Some((key, value)) = visitor.next_entry()? {
                             values.insert(key, value);
                         }
