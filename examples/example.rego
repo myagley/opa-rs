@@ -28,4 +28,3 @@ public_server[server] {                             # a server exists in the pub
     input.ports[i].network == input.networks[j].id  # the port references a network in the input.networks collection and...
     input.networks[j].public                        # the network is public.
 }
-

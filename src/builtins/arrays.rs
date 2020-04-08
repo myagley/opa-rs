@@ -6,7 +6,7 @@ pub fn concat(left: Value, right: Value) -> Result<Value, Error> {
     let mut left = left.try_into_array()?;
     let mut right = right.try_into_array()?;
     left.append(&mut right);
-    Ok(left.into())
+    Ok(Value::Array(left))
 }
 
 pub fn slice(val: Value, start: Value, end: Value) -> Result<Value, Error> {

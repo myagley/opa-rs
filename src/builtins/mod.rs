@@ -15,6 +15,7 @@ mod numbers;
 mod objects;
 mod regex;
 mod sets;
+mod strings;
 mod time;
 mod types;
 
@@ -60,18 +61,20 @@ lazy_static! {
 
         b.insert("net.cidr_expand", net::cidr_expand);
 
+        b.insert("upper", strings::upper);
+
         b.insert("time.clock", time::clock);
         b.insert("time.date", time::date);
         b.insert("time.parse_rfc3339_ns", time::parse_rfc3339_ns);
         b.insert("time.weekday", time::weekday);
 
-        b.insert("is_number", types::is_number);
-        b.insert("is_string", types::is_string);
-        b.insert("is_boolean", types::is_boolean);
         b.insert("is_array", types::is_array);
-        b.insert("is_set", types::is_set);
-        b.insert("is_is_object", types::is_object);
+        b.insert("is_boolean", types::is_boolean);
         b.insert("is_null", types::is_null);
+        b.insert("is_number", types::is_number);
+        b.insert("is_object", types::is_object);
+        b.insert("is_set", types::is_set);
+        b.insert("is_string", types::is_string);
         b.insert("type_name", types::type_name);
         b
     };

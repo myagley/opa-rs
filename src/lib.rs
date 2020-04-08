@@ -148,3 +148,15 @@ impl Policy {
 fn abort(_a: i32) {
     println!("abort");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_types() {
+        let mut policy = Policy::from_rego("tests/types.rego", "data.tests.types").unwrap();
+        let result = policy.evaluate(&Value::Null).unwrap();
+        assert_eq!(1, result.as_set().unwrap().len());
+    }
+}
