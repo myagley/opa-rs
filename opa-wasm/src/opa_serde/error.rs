@@ -4,8 +4,6 @@ use std::{convert, fmt, num, string};
 use serde::{de, ser};
 use thiserror::Error;
 
-use crate::Number;
-
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Error)]
@@ -36,8 +34,6 @@ pub enum Error {
     ExpectedFloat(u8),
     #[error("Expected number ref. Found repr {0}")]
     ExpectedNumberRef(u8),
-    #[error("Invalid number: {0}")]
-    InvalidNumber(Number),
     #[error("Invalid number repr. Found repr {0}")]
     InvalidNumberRepr(u8),
     #[error("Integer conversion failed.")]

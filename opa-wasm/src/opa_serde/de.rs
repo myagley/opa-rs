@@ -9,7 +9,7 @@ use serde::de::{self, IntoDeserializer, Visitor};
 use crate::opa_serde::{Error, Result};
 use crate::runtime::Instance;
 use crate::value::number;
-use crate::ValueAddr;
+use crate::{set, ValueAddr};
 
 use super::*;
 

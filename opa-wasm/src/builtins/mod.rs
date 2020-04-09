@@ -314,5 +314,6 @@ impl Inner {
 }
 
 fn trace(value: Value) -> Result<Value, Error> {
+    debug!("TRACE: {:?}", value);
     value.try_into_string().map(|_| true.into())
 }
