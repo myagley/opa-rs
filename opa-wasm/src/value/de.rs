@@ -2,7 +2,7 @@ use std::fmt;
 
 use serde::de::{Deserialize, MapAccess, SeqAccess, Visitor};
 
-use crate::opa::set;
+use crate::opa_serde::set;
 use crate::value::{number, Map, Number, Value};
 
 impl<'de> Deserialize<'de> for Value {
