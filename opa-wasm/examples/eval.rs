@@ -1,7 +1,7 @@
 use std::{fs, io};
 
 use clap::{App, Arg};
-use policy::{Policy, Value};
+use opa_wasm::{Policy, Value};
 use tracing::Level;
 use tracing_subscriber::{fmt, EnvFilter};
 
