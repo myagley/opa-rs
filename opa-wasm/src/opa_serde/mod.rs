@@ -262,7 +262,7 @@ mod tests {
 
     use crate::opa_serde::to_instance;
     use crate::runtime::{Instance, Memory, Module};
-    use crate::{value, Number, Value};
+    use crate::value::{self, Number, Value};
 
     use super::*;
 

@@ -12,9 +12,10 @@ pub mod set;
 pub mod value;
 
 use runtime::{Instance, Memory, Module};
+use value::Map;
 
 pub use error::Error;
-pub use value::{Map, Number, Value};
+pub use value::Value;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ValueAddr(i32);
