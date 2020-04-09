@@ -61,6 +61,7 @@ struct TestStruct {
 
     map: HashMap<u8, u8>,
     list: Vec<i16>,
+    #[serde(with = "opa_wasm::set")]
     set: HashSet<String>,
 }
 

@@ -5,8 +5,29 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 pub(crate) const TOKEN: &str = "$policy::opa::private::set";
 
+pub fn serialize<S, T>(t: &T, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+    T: Serialize,
+{
+    use serde::ser::SerializeStruct;
+
+    let mut s = serializer.serialize_struct(TOKEN, 1)?;
+    s.serialize_field(TOKEN, t)?;
+    s.end()
+}
+
+pub fn deserialize<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    let s = Set::<T>::deserialize(deserializer)?;
+    Ok(s.elements)
+}
+
 #[derive(Debug, Clone, PartialEq)]
-pub struct Set<T> {
+struct Set<T> {
     elements: T,
 }
 

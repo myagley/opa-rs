@@ -1,12 +1,10 @@
 mod de;
 mod error;
 mod ser;
-pub(crate) mod set;
 
 pub use de::{from_instance, Deserializer};
 pub use error::{Error, Result};
 pub use ser::{to_instance, Serializer};
-pub use set::Set;
 
 use std::mem;
 use std::os::raw::*;

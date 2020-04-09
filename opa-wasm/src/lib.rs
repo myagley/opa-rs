@@ -8,6 +8,7 @@ mod builtins;
 mod error;
 mod opa_serde;
 mod runtime;
+pub mod set;
 pub mod value;
 
 use runtime::{Instance, Memory, Module};

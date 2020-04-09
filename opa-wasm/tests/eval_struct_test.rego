@@ -42,5 +42,6 @@ eval_struct {
     input.list[1] == 2
     input.list[2] == 3
 
-    #input.set == {"a", "b"}
+    input.set | {"b", "a"} == {"a", "b"}
+    is_set(input.set)
 }
