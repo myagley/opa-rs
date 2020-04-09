@@ -255,15 +255,14 @@ impl opa_set_t {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashMap;
     use std::fs;
     use std::mem;
 
     use proptest::prelude::*;
     use serde::{Deserialize, Serialize};
 
-    use crate::opa::set::Set;
-    use crate::opa::to_instance;
+    use crate::opa_serde::to_instance;
     use crate::runtime::{Instance, Memory, Module};
     use crate::{value, Number, Value};
 
@@ -435,21 +434,6 @@ mod tests {
             let memory = Memory::from_module(module);
             let instance = Instance::new(module, memory).unwrap();
             let input = ();
-            let addr = to_instance(&instance, &input).unwrap();
-            let loaded = from_instance(&instance, addr).unwrap();
-            assert_eq!(input, loaded);
-        })
-    }
-
-    #[test]
-    fn test_roundtrip_set() {
-        EMPTY_MODULE.with(|module| {
-            let memory = Memory::from_module(module);
-            let instance = Instance::new(module, memory).unwrap();
-            let mut input = HashSet::new();
-            input.insert("key1".to_string());
-            input.insert("key2".to_string());
-            let input = Set::new(input);
             let addr = to_instance(&instance, &input).unwrap();
             let loaded = from_instance(&instance, addr).unwrap();
             assert_eq!(input, loaded);

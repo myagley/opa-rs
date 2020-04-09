@@ -6,7 +6,7 @@ use thiserror::Error;
 #[cfg(target_arch = "x86_64")]
 use wasmtime::Trap;
 
-use crate::{opa, Value};
+use crate::{opa_serde, Value};
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -60,7 +60,7 @@ pub enum Error {
     #[error("Invalid function return. Expected {0}")]
     InvalidResult(&'static str),
     #[error("Failed to serialize value to instance.")]
-    InstanceSerde(#[source] opa::Error),
+    InstanceSerde(#[source] opa_serde::Error),
     #[error("Invalid buffer length when casting to struct. Expected {0}, got {1}.")]
     NotEnoughData(usize, usize),
 }
@@ -77,8 +77,8 @@ impl ser::Error for Error {
     }
 }
 
-impl From<opa::Error> for Error {
-    fn from(error: opa::Error) -> Error {
+impl From<opa_serde::Error> for Error {
+    fn from(error: opa_serde::Error) -> Error {
         Error::InstanceSerde(error)
     }
 }

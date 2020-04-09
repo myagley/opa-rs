@@ -6,7 +6,7 @@ use lazy_static::lazy_static;
 use tracing::{debug, error};
 
 use crate::runtime::Instance;
-use crate::{opa, Error, Value, ValueAddr};
+use crate::{opa_serde, Error, Value, ValueAddr};
 
 mod aggregates;
 mod arrays;
@@ -189,7 +189,7 @@ struct Inner {
 impl Inner {
     fn new(instance: Instance) -> Result<Self, Error> {
         let builtins_addr = instance.functions().builtins()?;
-        let val: Value = opa::from_instance(&instance, builtins_addr)?;
+        let val: Value = opa_serde::from_instance(&instance, builtins_addr)?;
 
         let mut lookup = HashMap::new();
         for (k, v) in val.try_into_object()?.into_iter() {
@@ -216,7 +216,7 @@ impl Inner {
         let result = btry!(func());
         debug!(name = %name, arity = 0, result = ?result, "called builtin function.");
 
-        btry!(opa::to_instance(&self.instance, &result))
+        btry!(opa_serde::to_instance(&self.instance, &result))
     }
 
     fn builtin1(&self, id: i32, _ctx_addr: ValueAddr, value: ValueAddr) -> ValueAddr {
@@ -228,13 +228,13 @@ impl Inner {
             .get(name.as_str())
             .ok_or_else(|| Error::UnknownBuiltin(name.to_string())));
 
-        let val = btry!(opa::from_instance(&self.instance, value));
+        let val = btry!(opa_serde::from_instance(&self.instance, value));
 
         debug!(name = %name, arity = 1, arg0 = ?val, "calling builtin function...");
         let result = btry!(func(val));
         debug!(name = %name, arity = 1, result = ?result, "called builtin function.");
 
-        btry!(opa::to_instance(&self.instance, &result))
+        btry!(opa_serde::to_instance(&self.instance, &result))
     }
 
     fn builtin2(&self, id: i32, _ctx_addr: ValueAddr, a: ValueAddr, b: ValueAddr) -> ValueAddr {
@@ -246,14 +246,14 @@ impl Inner {
             .get(name.as_str())
             .ok_or_else(|| Error::UnknownBuiltin(name.to_string())));
 
-        let val1 = btry!(opa::from_instance(&self.instance, a));
-        let val2 = btry!(opa::from_instance(&self.instance, b));
+        let val1 = btry!(opa_serde::from_instance(&self.instance, a));
+        let val2 = btry!(opa_serde::from_instance(&self.instance, b));
 
         debug!(name = %name, arity = 2, arg0 = ?val1, arg1 = ?val2, "calling builtin function...");
         let result = btry!(func(val1, val2));
         debug!(name = %name, arity = 2, result = ?result, "called builtin function.");
 
-        btry!(opa::to_instance(&self.instance, &result))
+        btry!(opa_serde::to_instance(&self.instance, &result))
     }
 
     fn builtin3(
@@ -272,15 +272,15 @@ impl Inner {
             .get(name.as_str())
             .ok_or_else(|| Error::UnknownBuiltin(name.to_string())));
 
-        let val1 = btry!(opa::from_instance(&self.instance, a));
-        let val2 = btry!(opa::from_instance(&self.instance, b));
-        let val3 = btry!(opa::from_instance(&self.instance, c));
+        let val1 = btry!(opa_serde::from_instance(&self.instance, a));
+        let val2 = btry!(opa_serde::from_instance(&self.instance, b));
+        let val3 = btry!(opa_serde::from_instance(&self.instance, c));
 
         debug!(name = %name, arity = 3, arg0 = ?val1, arg1 = ?val2, arg2 = ?val3, "calling builtin function...");
         let result = btry!(func(val1, val2, val3));
         debug!(name = %name, arity = 3, result = ?result, "called builtin function.");
 
-        btry!(opa::to_instance(&self.instance, &result))
+        btry!(opa_serde::to_instance(&self.instance, &result))
     }
 
     fn builtin4(
@@ -300,16 +300,16 @@ impl Inner {
             .get(name.as_str())
             .ok_or_else(|| Error::UnknownBuiltin(name.to_string())));
 
-        let val1 = btry!(opa::from_instance(&self.instance, a));
-        let val2 = btry!(opa::from_instance(&self.instance, b));
-        let val3 = btry!(opa::from_instance(&self.instance, c));
-        let val4 = btry!(opa::from_instance(&self.instance, d));
+        let val1 = btry!(opa_serde::from_instance(&self.instance, a));
+        let val2 = btry!(opa_serde::from_instance(&self.instance, b));
+        let val3 = btry!(opa_serde::from_instance(&self.instance, c));
+        let val4 = btry!(opa_serde::from_instance(&self.instance, d));
 
         debug!(name = %name, arity = 4, arg0 = ?val1, arg1 = ?val2, arg2 = ?val3, arg3 = ?val4, "calling builtin function...");
         let result = btry!(func(val1, val2, val3, val4));
         debug!(name = %name, arity = 4, result = ?result, "called builtin function.");
 
-        btry!(opa::to_instance(&self.instance, &result))
+        btry!(opa_serde::to_instance(&self.instance, &result))
     }
 }
 

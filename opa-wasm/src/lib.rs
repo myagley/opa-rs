@@ -6,7 +6,7 @@ use tempfile::TempDir;
 
 mod builtins;
 mod error;
-mod opa;
+mod opa_serde;
 mod runtime;
 pub mod value;
 
@@ -82,7 +82,7 @@ impl Policy {
 
         // Load initial data
         let initial = Value::Object(Map::new());
-        let data_addr = opa::to_instance(&instance, &initial)?;
+        let data_addr = opa_serde::to_instance(&instance, &initial)?;
 
         let base_heap_ptr = instance.functions().heap_ptr_get()?;
         let base_heap_top = instance.functions().heap_top_get()?;
@@ -109,7 +109,7 @@ impl Policy {
         self.instance.functions().heap_top_set(self.data_heap_top)?;
 
         // Load input data
-        let input_addr = opa::to_instance(&self.instance, input)?;
+        let input_addr = opa_serde::to_instance(&self.instance, input)?;
 
         // setup the context
         let ctx_addr = self.instance.functions().eval_ctx_new()?;
@@ -124,14 +124,14 @@ impl Policy {
         self.instance.functions().eval(ctx_addr)?;
 
         let result_addr = self.instance.functions().eval_ctx_get_result(ctx_addr)?;
-        let v = opa::from_instance(&self.instance, result_addr)?;
+        let v = opa_serde::from_instance(&self.instance, result_addr)?;
         Ok(v)
     }
 
     pub fn set_data<T: Serialize>(&mut self, data: &T) -> Result<(), Error> {
         self.instance.functions().heap_ptr_set(self.base_heap_ptr)?;
         self.instance.functions().heap_top_set(self.base_heap_top)?;
-        self.data_addr = opa::to_instance(&self.instance, data)?;
+        self.data_addr = opa_serde::to_instance(&self.instance, data)?;
         self.data_heap_ptr = self.instance.functions().heap_ptr_get()?;
         self.data_heap_top = self.instance.functions().heap_top_get()?;
         Ok(())

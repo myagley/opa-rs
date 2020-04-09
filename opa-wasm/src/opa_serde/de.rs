@@ -6,9 +6,9 @@ use std::str;
 
 use serde::de::{self, IntoDeserializer, Visitor};
 
-use crate::opa::{Error, Result};
-use crate::value::number;
+use crate::opa_serde::{Error, Result};
 use crate::runtime::Instance;
+use crate::value::number;
 use crate::ValueAddr;
 
 use super::*;

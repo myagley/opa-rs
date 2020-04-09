@@ -1,6 +1,6 @@
 use serde::ser::Serialize;
 
-use crate::opa;
+use crate::opa_serde;
 use crate::value::Value;
 
 impl Serialize for Value {
@@ -25,8 +25,8 @@ impl Serialize for Value {
             }
             Value::Set(ref s) => {
                 use serde::ser::SerializeStruct;
-                let mut set = serializer.serialize_struct(opa::set::TOKEN, 1)?;
-                set.serialize_field(opa::set::TOKEN, s)?;
+                let mut set = serializer.serialize_struct(opa_serde::set::TOKEN, 1)?;
+                set.serialize_field(opa_serde::set::TOKEN, s)?;
                 set.end()
             }
         }
