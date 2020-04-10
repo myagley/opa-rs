@@ -51,7 +51,8 @@ fn main() -> Result<(), anyhow::Error> {
         .unwrap_or_else(|| Ok("{}".to_string()))?;
     let input = serde_json::from_str::<Value>(&input_str)?;
 
-    let mut policy = Policy::from_rego(&policy_path, query)?;
+    let module = opa_compiler::compile(query, &policy_path)?;
+    let mut policy = Policy::from_wasm(&module)?;
     let result = policy.evaluate(&input)?;
     println!("result: {}", result);
     Ok(())

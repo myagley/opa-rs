@@ -1,8 +1,6 @@
-use std::path::Path;
-use std::{fmt, ops, process};
+use std::{fmt, ops};
 
 use serde::Serialize;
-use tempfile::TempDir;
 
 mod builtins;
 mod error;
@@ -57,30 +55,10 @@ pub struct Policy {
 }
 
 impl Policy {
-    pub fn from_rego<P: AsRef<Path>>(path: P, query: &str) -> Result<Self, Error> {
-        let dir = TempDir::new().map_err(Error::DirOpen)?;
-        let wasm = dir.path().join("policy.wasm");
-        let output = process::Command::new("opa")
-            .arg("build")
-            .args(&["-d".as_ref(), path.as_ref().as_os_str()])
-            .args(&["-o".as_ref(), wasm.as_os_str()])
-            .arg(query)
-            .output()
-            .map_err(Error::OpaCommand)?;
-
-        if !output.status.success() {
-            return Err(Error::OpaCompiler(
-                String::from_utf8_lossy(&output.stdout).to_string(),
-            ));
-        }
-
-        let module = Module::from_file(&wasm)?;
-        Self::from_wasm(&module)
-    }
-
-    pub fn from_wasm(module: &Module) -> Result<Self, Error> {
-        let memory = Memory::from_module(module);
-        let instance = Instance::new(module, memory)?;
+    pub fn from_wasm<B: AsRef<[u8]>>(bytes: B) -> Result<Self, Error> {
+        let module = Module::from_bytes(bytes)?;
+        let memory = Memory::from_module(&module);
+        let instance = Instance::new(&module, memory)?;
 
         // Load initial data
         let initial = Value::Object(Map::new());
@@ -149,16 +127,4 @@ impl Policy {
 
 fn abort(_a: i32) {
     println!("abort");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_types() {
-        let mut policy = Policy::from_rego("tests/types.rego", "data.tests.types").unwrap();
-        let result = policy.evaluate(&Value::Null).unwrap();
-        assert_eq!(1, result.as_set().unwrap().len());
-    }
 }
