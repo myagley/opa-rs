@@ -1,0 +1,10 @@
+[package]
+name = "opa-compiler"
+version = "0.1.0"
+authors = ["Mike Yagley <myagley@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+opa-compiler-sys = { version = "0.1.0", path = "../opa-compiler-sys" }
