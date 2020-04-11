@@ -1,0 +1,2 @@
+[target.armv7-unknown-linux-gnueabihf]
+image = "myagley/cross-go:armv7-unknown-linux-gnueabihf-0.2.0"
