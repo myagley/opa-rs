@@ -14,8 +14,6 @@ lazy_static = "1"
 ordered-float = { version = "1.0.2", features = ["serde"] }
 regex = "1"
 serde = "1"
-serde_json = "1.0"
-tempfile = "3"
 thiserror = "1.0"
 tracing = "0.1"
 
@@ -30,6 +28,8 @@ wasmi = "0.6"
 anyhow = "1.0"
 atty = "0.2"
 clap = "2.33"
+opa-compiler = { version = "0.1.0", path = "../opa-compiler" }
 proptest = "0.9"
+serde_json = "1.0"
 tracing = "0.1"
 tracing-subscriber = "0.2"
