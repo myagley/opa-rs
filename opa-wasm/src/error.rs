@@ -3,8 +3,8 @@ use std::{fmt, io};
 use serde::{de, ser};
 use thiserror::Error;
 
-#[cfg(target_arch = "x86_64")]
-use wasmtime::Trap;
+// #[cfg(target_arch = "x86_64")]
+// use wasmtime::Trap;
 
 use crate::{opa_serde, Value};
 
@@ -12,21 +12,21 @@ use crate::{opa_serde, Value};
 pub enum Error {
     #[error("Policy is not initialized properly. This is a bug.")]
     Initialization,
-    #[cfg(target_arch = "x86_64")]
-    #[error("An occurred from wasmtime.")]
-    Wasmtime(#[source] anyhow::Error),
-    #[cfg(not(target_arch = "x86_64"))]
+    // #[cfg(target_arch = "x86_64")]
+    // #[error("An occurred from wasmtime.")]
+    // Wasmtime(#[source] anyhow::Error),
+    // #[cfg(not(target_arch = "x86_64"))]
     #[error("An occurred from wasmi.")]
     Wasmi(#[source] wasmi::Error),
     #[error("Expected exported function {0}")]
     MissingExport(&'static str),
-    #[cfg(target_arch = "x86_64")]
-    #[error("A wasm function call trapped.")]
-    Trap(
-        #[source]
-        #[from]
-        Trap,
-    ),
+    // #[cfg(target_arch = "x86_64")]
+    // #[error("A wasm function call trapped.")]
+    // Trap(
+    //     #[source]
+    //     #[from]
+    //     Trap,
+    // ),
     #[error("Failed to open a directory.")]
     DirOpen(#[source] io::Error),
     #[error("Failed to open a file.")]
@@ -41,9 +41,9 @@ pub enum Error {
     DeserializeValue(String),
     #[error("Failed to serialize: {0}")]
     SerializeValue(String),
-    #[error("Invalid type in builtin function: expected {0}, got {1:?}")]
+    #[error("Invalid type: expected {0}, got {1:?}")]
     InvalidType(&'static str, Value),
-    #[error("Invalid type conversion in builtin function: expected {0}")]
+    #[error("Invalid type conversion: expected {0}")]
     InvalidConversion(&'static str),
     #[error("Unknown builtin required: {0}")]
     UnknownBuiltin(String),

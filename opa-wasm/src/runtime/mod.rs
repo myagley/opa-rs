@@ -3,22 +3,22 @@ use std::sync::Arc;
 
 use crate::{Error, ValueAddr};
 
-#[cfg(target_arch = "x86_64")]
-mod wasmtime;
+// #[cfg(target_arch = "x86_64")]
+// mod wasmtime;
 
-#[cfg(not(target_arch = "x86_64"))]
+// #[cfg(not(target_arch = "x86_64"))]
 mod wasmi;
 
-#[cfg(target_arch = "x86_64")]
-pub use self::wasmtime::{Instance, Memory, Module};
+// #[cfg(target_arch = "x86_64")]
+// pub use self::wasmtime::{Instance, Memory, Module};
 
-#[cfg(not(target_arch = "x86_64"))]
+// #[cfg(not(target_arch = "x86_64"))]
 pub use self::wasmi::{Instance, Memory, Module};
 
-#[cfg(target_arch = "x86_64")]
-use self::wasmtime::FunctionsImpl;
+// #[cfg(target_arch = "x86_64")]
+// use self::wasmtime::FunctionsImpl;
 
-#[cfg(not(target_arch = "x86_64"))]
+// #[cfg(not(target_arch = "x86_64"))]
 use self::wasmi::FunctionsImpl;
 
 pub trait AsBytes {
