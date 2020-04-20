@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "opa-compiler",
-    "opa-compiler-sys",
+    "opa-go",
+    "opa-go-sys",
     "opa-wasm",
 ]

@@ -86,7 +86,7 @@ fn test_eval() {
     set.insert("a".to_string());
     set.insert("b".to_string());
 
-    let module = opa_compiler::compile("data.tests.eval_struct", &rego).unwrap();
+    let module = opa_go::wasm::compile("data.tests.eval_struct", &rego).unwrap();
     let mut policy = Policy::from_wasm(&module).unwrap();
     let input = TestStruct {
         byte: -1,

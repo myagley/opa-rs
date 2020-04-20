@@ -28,7 +28,7 @@ wasmi = "0.6"
 anyhow = "1.0"
 atty = "0.2"
 clap = "2.33"
-opa-compiler = { version = "0.1.0", path = "../opa-compiler" }
+opa-go = { version = "0.1.0", path = "../opa-go" }
 proptest = "0.9"
 serde_json = "1.0"
 tracing = "0.1"
