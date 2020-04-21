@@ -2,16 +2,16 @@ use std::os::raw::{c_char, c_void};
 use std::path::Path;
 use std::{slice, str};
 
-use opa_go_sys::{Build, Free, GoInt, GoSlice, GoString};
+use opa_go_sys::{Free, GoInt, GoSlice, GoString, WasmBuild};
 
 use crate::{Error, GoError};
 
-struct BuildReturn {
+struct WasmBuildReturn {
     ptr: *const u8,
     len: usize,
 }
 
-impl BuildReturn {
+impl WasmBuildReturn {
     fn into_bytes(self) -> Vec<u8> {
         let bytes = unsafe {
             if self.ptr.is_null() {
@@ -25,7 +25,7 @@ impl BuildReturn {
     }
 }
 
-impl Drop for BuildReturn {
+impl Drop for WasmBuildReturn {
     fn drop(&mut self) {
         if !self.ptr.is_null() {
             unsafe { Free(self.ptr as *mut c_void) }
@@ -72,10 +72,10 @@ fn build(
     data: GoSlice,
     bundles: GoSlice,
     ignore: GoSlice,
-) -> Result<BuildReturn, Error> {
-    let result = unsafe { Build(query, data, bundles, ignore) };
+) -> Result<WasmBuildReturn, Error> {
+    let result = unsafe { WasmBuild(query, data, bundles, ignore) };
     if !result.r0.is_null() && !result.r2.is_null() {
-        let r = BuildReturn {
+        let r = WasmBuildReturn {
             ptr: result.r0 as *const u8,
             len: result.r1 as usize,
         };
@@ -90,7 +90,7 @@ fn build(
         };
         Err(Error::from(goe))
     } else if !result.r0.is_null() {
-        let r = BuildReturn {
+        let r = WasmBuildReturn {
             ptr: result.r0 as *const u8,
             len: result.r1 as usize,
         };

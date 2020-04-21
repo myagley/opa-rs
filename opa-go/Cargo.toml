@@ -6,3 +6,5 @@ edition = "2018"
 
 [dependencies]
 opa-go-sys = { version = "0.1.0", path = "../opa-go-sys" }
+serde = "1"
+serde_json = "1"
