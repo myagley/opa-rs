@@ -2,5 +2,6 @@
 members = [
     "opa-go",
     "opa-go-sys",
+    "opa-rego",
     "opa-wasm",
 ]

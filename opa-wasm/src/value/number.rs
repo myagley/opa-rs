@@ -325,7 +325,7 @@ macro_rules! deserialize_number {
         {
             self.deserialize_any(visitor)
         }
-    }
+    };
 }
 
 impl<'de> Deserializer<'de> for Number {
