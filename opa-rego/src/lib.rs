@@ -1,9 +1,38 @@
+use std::fmt;
+
 use rego::CompiledQuery;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 #[derive(Debug)]
-pub enum Error {}
+pub enum Error {
+    Compile(String),
+    Runtime(rego::Error<'static>),
+    Serialize(rego::Error<'static>),
+    Deserialize(rego::Error<'static>),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Compile(s) => write!(f, "Policy failed to compile: {}", s),
+            Self::Runtime(_) => write!(f, "An error occurred while evaluating the policy."),
+            Self::Serialize(_) => write!(f, "An error occurred while serializing the input."),
+            Self::Deserialize(_) => write!(f, "An error occurred while deserializing the result."),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Runtime(e) => Some(e),
+            Self::Serialize(e) => Some(e),
+            Self::Deserialize(e) => Some(e),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Policy {
@@ -12,15 +41,15 @@ pub struct Policy {
 
 impl Policy {
     pub fn from_query(query: &str, modules: &[&str]) -> Result<Self, Error> {
-        let query = rego::compile(query, modules).unwrap();
+        let query = rego::compile(query, modules).map_err(|e| Error::Compile(e.to_string()))?;
         let policy = Self { query };
         Ok(policy)
     }
 
     pub fn evaluate<T: Serialize, V: DeserializeOwned>(&mut self, input: T) -> Result<V, Error> {
-        let input = rego::to_value(input).unwrap();
-        let result = self.query.eval(input).unwrap();
-        let result = rego::from_value(result).unwrap();
+        let input = rego::to_value(input).map_err(Error::Serialize)?;
+        let result = self.query.eval(input).map_err(Error::Runtime)?;
+        let result = rego::from_value(result).map_err(Error::Deserialize)?;
         Ok(result)
     }
 }
