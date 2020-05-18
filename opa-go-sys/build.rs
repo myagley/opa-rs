@@ -11,8 +11,12 @@ fn main() {
     let bindings = bindgen::Builder::default()
         .header(header.display().to_string())
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
-        .whitelist_function("Build")
         .whitelist_function("Free")
+        .whitelist_function("RegoNew")
+        .whitelist_function("RegoDrop")
+        .whitelist_function("RegoEval")
+        .whitelist_function("RegoEvalBool")
+        .whitelist_function("WasmBuild")
         .clang_arg("-I/usr/arm-linux-gnueabihf/include")
         .generate()
         .expect("Unable to generate bindings");
