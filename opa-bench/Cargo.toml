@@ -10,6 +10,7 @@ bench = false
 
 [dev-dependencies]
 criterion = "0.3"
+serde = "1"
 
 opa-go = { path = "../opa-go" }
 opa-rego = { path = "../opa-rego" }
@@ -17,4 +18,8 @@ opa-wasm = { path = "../opa-wasm" }
 
 [[bench]]
 name = "simple_eval"
+harness = false
+
+[[bench]]
+name = "activity"
 harness = false

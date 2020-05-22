@@ -15,20 +15,26 @@ pub fn bench_simple_eval(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("simple eval");
 
-    group.bench_function(BenchmarkId::new("go", "default true"), |b| b.iter(|| {
-        let result = go.eval_bool(&()).unwrap();
-        assert_eq!(true, result);
-    }));
+    group.bench_function(BenchmarkId::new("go", "default true"), |b| {
+        b.iter(|| {
+            let result = go.eval_bool(black_box(&())).unwrap();
+            assert_eq!(true, result);
+        })
+    });
 
-    group.bench_function(BenchmarkId::new("wasm", "default true"), |b| b.iter(|| {
-        let result = wasm.evaluate(&());
-        assert!(result.is_ok());
-    }));
+    group.bench_function(BenchmarkId::new("wasm", "default true"), |b| {
+        b.iter(|| {
+            let result = wasm.evaluate(black_box(&()));
+            assert!(result.is_ok());
+        })
+    });
 
-    group.bench_function(BenchmarkId::new("rust-rego", "default true"), |b| b.iter(|| {
-        let result: bool = rego.evaluate(black_box(())).unwrap();
-        assert_eq!(true, result);
-    }));
+    group.bench_function(BenchmarkId::new("rust-rego", "default true"), |b| {
+        b.iter(|| {
+            let result: bool = rego.evaluate(black_box(())).unwrap();
+            assert_eq!(true, result);
+        })
+    });
 
     group.finish();
 }

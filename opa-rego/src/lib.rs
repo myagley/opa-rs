@@ -48,7 +48,7 @@ impl Policy {
 
     pub fn evaluate<T: Serialize, V: DeserializeOwned>(&mut self, input: T) -> Result<V, Error> {
         let input = rego::to_value(input).map_err(Error::Serialize)?;
-        let result = self.query.eval(input).map_err(Error::Runtime)?;
+        let result = self.query.eval(&input).map_err(Error::Runtime)?;
         let result = rego::from_value(result).map_err(Error::Deserialize)?;
         Ok(result)
     }
