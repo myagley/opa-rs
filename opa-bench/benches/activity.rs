@@ -1,7 +1,9 @@
+use std::borrow::Cow;
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::PathBuf;
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use rego::{Index, Map, ToValue, Value};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -10,6 +12,18 @@ pub struct ClientId(String);
 impl From<String> for ClientId {
     fn from(id: String) -> Self {
         Self(id)
+    }
+}
+
+impl Index for ClientId {
+    fn index(&self, _field: &Value<'_>) -> Option<Value<'_>> {
+        None
+    }
+}
+
+impl ToValue for ClientId {
+    fn to_value(&self) -> Value<'_> {
+        Value::String(Cow::Borrowed(self.0.as_str()))
     }
 }
 
@@ -46,11 +60,48 @@ impl<T: Into<Identity>> From<T> for AuthId {
     }
 }
 
+impl Index for AuthId {
+    fn index(&self, field: &Value<'_>) -> Option<Value<'_>> {
+        if let Value::String(field) = field {
+            match field.as_ref() {
+                "identity" => {
+                    if let Self::Identity(id) = self {
+                        Some(Value::Ref(id))
+                    } else {
+                        None
+                    }
+                }
+                "anonymous" => {
+                    if let Self::Anonymous = self {
+                        Some(Value::Null)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+}
+
+impl ToValue for AuthId {
+    fn to_value(&self) -> Value<'_> {
+        let mut obj = Map::new();
+        match self {
+            Self::Anonymous => obj.insert(Value::from("anonymous"), Value::Null),
+            Self::Identity(i) => obj.insert(Value::from("identity"), i.to_value()),
+        };
+        Value::Object(obj)
+    }
+}
+
 /// Non-anonymous client identity.
 pub type Identity = String;
 
 /// Describes a client activity to authorized.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub struct Activity {
     auth_id: AuthId,
@@ -84,8 +135,33 @@ impl Activity {
     }
 }
 
+impl Index for Activity {
+    fn index(&self, field: &Value<'_>) -> Option<Value<'_>> {
+        if let Value::String(field) = field {
+            match field.as_ref() {
+                "auth_id" => Some(Value::Ref(&self.auth_id)),
+                "client_id" => Some(Value::Ref(&self.client_id)),
+                "operation" => Some(Value::Ref(&self.operation)),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+}
+
+impl ToValue for Activity {
+    fn to_value(&self) -> Value<'_> {
+        let mut obj = Map::new();
+        obj.insert(Value::from("auth_id"), self.auth_id.to_value());
+        obj.insert(Value::from("client_id"), self.client_id.to_value());
+        obj.insert(Value::from("operation"), self.operation.to_value());
+        Value::Object(obj)
+    }
+}
+
 /// Describes a client operation to be authorized.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum Operation {
     Connect(Connect),
@@ -123,16 +199,95 @@ impl Operation {
     // }
 }
 
+impl Index for Operation {
+    fn index(&self, field: &Value<'_>) -> Option<Value<'_>> {
+        if let Value::String(field) = field {
+            match field.as_ref() {
+                "connect" => {
+                    if let Self::Connect(connect) = self {
+                        Some(Value::Ref(connect))
+                    } else {
+                        None
+                    }
+                }
+                "publish" => {
+                    if let Self::Publish(publish) = self {
+                        Some(Value::Ref(publish))
+                    } else {
+                        None
+                    }
+                }
+                "subscribe" => {
+                    if let Self::Subscribe(subscribe) = self {
+                        Some(Value::Ref(subscribe))
+                    } else {
+                        None
+                    }
+                }
+                "receive" => {
+                    if let Self::Receive(receive) = self {
+                        Some(Value::Ref(receive))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+}
+
+impl ToValue for Operation {
+    fn to_value(&self) -> Value<'_> {
+        let mut obj = Map::new();
+        match self {
+            Self::Connect(c) => obj.insert(Value::from("connect"), c.to_value()),
+            Self::Publish(p) => obj.insert(Value::from("publish"), p.to_value()),
+            Self::Subscribe(s) => obj.insert(Value::from("subscribe"), s.to_value()),
+            Self::Receive(r) => obj.insert(Value::from("receive"), r.to_value()),
+        };
+        Value::Object(obj)
+    }
+}
+
 /// Represents a client attempt to connect to the broker.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub struct Connect {
     remote_addr: IpAddr,
     will: Option<Publication>,
 }
 
+impl Index for Connect {
+    fn index(&self, field: &Value<'_>) -> Option<Value<'_>> {
+        if let Value::String(s) = field {
+            match s.as_ref() {
+                "remote_addr" => Some(Value::String(Cow::Owned(self.remote_addr.to_string()))),
+                "will" => Some(Value::Ref(&self.will)),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+}
+
+impl ToValue for Connect {
+    fn to_value(&self) -> Value<'_> {
+        let mut obj = Map::new();
+        obj.insert(
+            Value::String(Cow::Borrowed("remote_addr")),
+            Value::String(Cow::Owned(self.remote_addr.to_string())),
+        );
+        obj.insert(Value::String(Cow::Borrowed("will")), self.will.to_value());
+        Value::Object(obj)
+    }
+}
+
 /// Represents a publication description without payload to be used for authorization.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub struct Publication {
     // topic_name: String,
@@ -156,8 +311,20 @@ pub struct Publication {
 //     }
 // }
 
+impl Index for Publication {
+    fn index(&self, _field: &Value<'_>) -> Option<Value<'_>> {
+        None
+    }
+}
+
+impl ToValue for Publication {
+    fn to_value(&self) -> Value<'_> {
+        Value::Null
+    }
+}
+
 /// Represents a client attempt to publish a new message on a specified MQTT topic.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub struct Publish {
     // publication: Publication,
@@ -185,8 +352,20 @@ pub struct Publish {
 //     }
 // }
 
+impl Index for Publish {
+    fn index(&self, _field: &Value<'_>) -> Option<Value<'_>> {
+        None
+    }
+}
+
+impl ToValue for Publish {
+    fn to_value(&self) -> Value<'_> {
+        Value::Null
+    }
+}
+
 /// Represents a client attempt to subscribe to a specified MQTT topic in order to received messages.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub struct Subscribe {
     // topic_filter: String,
@@ -208,8 +387,20 @@ pub struct Subscribe {
 //     }
 // }
 
+impl Index for Subscribe {
+    fn index(&self, _field: &Value<'_>) -> Option<Value<'_>> {
+        None
+    }
+}
+
+impl ToValue for Subscribe {
+    fn to_value(&self) -> Value<'_> {
+        Value::Null
+    }
+}
+
 /// Represents a client to received a message from a specified MQTT topic.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub struct Receive {
     // publication: Publication,
@@ -222,6 +413,18 @@ pub struct Receive {
 //         }
 //     }
 // }
+
+impl Index for Receive {
+    fn index(&self, _field: &Value<'_>) -> Option<Value<'_>> {
+        None
+    }
+}
+
+impl ToValue for Receive {
+    fn to_value(&self) -> Value<'_> {
+        Value::Null
+    }
+}
 
 pub fn bench_activity(c: &mut Criterion) {
     let query = "data.test.allow";

@@ -15,6 +15,7 @@ serde = "1"
 opa-go = { path = "../opa-go" }
 opa-rego = { path = "../opa-rego" }
 opa-wasm = { path = "../opa-wasm" }
+rego = { path = "../../rego" }
 
 [[bench]]
 name = "simple_eval"

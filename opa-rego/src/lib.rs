@@ -1,8 +1,7 @@
 use std::fmt;
 
-use rego::CompiledQuery;
+use rego::{CompiledQuery, ValueRef};
 use serde::de::DeserializeOwned;
-use serde::Serialize;
 
 #[derive(Debug)]
 pub enum Error {
@@ -46,8 +45,7 @@ impl Policy {
         Ok(policy)
     }
 
-    pub fn evaluate<T: Serialize, V: DeserializeOwned>(&mut self, input: T) -> Result<V, Error> {
-        let input = rego::to_value(input).map_err(Error::Serialize)?;
+    pub fn evaluate<T: ValueRef, V: DeserializeOwned>(&mut self, input: T) -> Result<V, Error> {
         let result = self.query.eval(&input).map_err(Error::Runtime)?;
         let result = rego::from_value(result).map_err(Error::Deserialize)?;
         Ok(result)
