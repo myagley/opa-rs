@@ -1,0 +1,26 @@
+[package]
+name = "opa-bench"
+version = "0.1.0"
+authors = ["Mike Yagley <myagley@gmail.com>"]
+edition = "2018"
+publish = false
+
+[lib]
+bench = false
+
+[dev-dependencies]
+criterion = "0.3"
+serde = "1"
+
+opa-go = { path = "../opa-go" }
+opa-rego = { path = "../opa-rego" }
+opa-wasm = { path = "../opa-wasm" }
+rego = { path = "../../rego" }
+
+[[bench]]
+name = "simple_eval"
+harness = false
+
+[[bench]]
+name = "activity"
+harness = false
